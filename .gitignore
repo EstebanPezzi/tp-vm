@@ -1,0 +1,22 @@
+# Archivos de código fuente Assembler
+*.asm
+
+# Archivos de máquina virtual
+*.vmx
+
+# Archivos de compilación y depuración (Visual Studio / MSVC)
+*.exe
+*.pdb
+*.ilk
+*.obj
+
+# Archivos temporales y de sistema
+*.tmp
+*.log
+Thumbs.db
+
+# Directorios comunes
+.vscode/
+build/
+
+*.txt
