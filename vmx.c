@@ -4,87 +4,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Memoria principal: 16 KiB
-#define MEMORY_SIZE 16384
-
-// Tabla de descriptores de segmentos: 8 entradas de 4 bytes cada una
-#define SEGMENT_TABLE_SIZE 8
-
-// Registros: 32 de 4 bytes
-#define NUM_REGISTERS 32
-
-// Códigos de registros PARTE 1
-#define REG_LAR 0
-#define REG_MAR 1
-#define REG_MBR 2
-#define REG_IP 3
-#define REG_OPC 4
-#define REG_OP1 5
-#define REG_OP2 6
-#define REG_EAX 10
-#define REG_EBX 11
-#define REG_ECX 12
-#define REG_EDX 13
-#define REG_EEX 14
-#define REG_EFX 15
-#define REG_AC 16
-#define REG_CC 17
-#define REG_CS 26
-#define REG_DS 27
-
-// Códigos de operaciones (opcodes)
-#define OPC_MOV 0x10
-#define OPC_ADD 0x11
-#define OPC_SUB 0x12
-#define OPC_MUL 0x13
-#define OPC_DIV 0x14
-#define OPC_CMP 0x15
-#define OPC_SHL 0x16
-#define OPC_SHR 0x17
-#define OPC_SAR 0x18
-#define OPC_AND 0x19
-#define OPC_OR 0x1A
-#define OPC_XOR 0x1B
-#define OPC_SWAP 0x1C
-#define OPC_LDL 0x1D
-#define OPC_LDH 0x1E
-#define OPC_RND 0x1F
-#define OPC_SYS 0x00
-#define OPC_JMP 0x01
-#define OPC_JZ 0x02
-#define OPC_JP 0x03
-#define OPC_JN 0x04
-#define OPC_JNZ 0x05
-#define OPC_JNP 0x06
-#define OPC_JNN 0x07
-#define OPC_NOT 0x08
-#define OPC_STOP 0x0F
-
-// Tipos de operandos
-#define OP_TYPE_NONE 0x00
-#define OP_TYPE_REGISTER 0x01
-#define OP_TYPE_IMMEDIATE 0x10
-#define OP_TYPE_MEMORY 0x11
-
-// Estructura para la VM
-typedef struct
-{
-    uint8_t memory[MEMORY_SIZE];
-    uint32_t segment_table[SEGMENT_TABLE_SIZE];
-    int32_t registers[NUM_REGISTERS];
-    bool running;
-} VM;
-
-// Funciones principales
-void vm_init(VM *vm);
-int vm_load_program(VM *vm, const char *filename);
-void vm_execute(VM *vm);
+#include "vmx.h"
+#include "instructions.c" //<- me parece que no esta bueno, solucion x ahora
 
 void vm_init(VM *vm)
 {
     memset(vm->memory, 0, MEMORY_SIZE);
     memset(vm->segment_table, 0, sizeof(vm->segment_table));
     memset(vm->registers, 0, sizeof(vm->registers));
+    memset(instruction_table, 0, sizeof(instruction_table)); //Pone todo en NULL
+    srand(time(NULL)); //semilla distinta cada vez que ejecuto el programa para funcion rand()
     vm->running = false;
 }
 
@@ -138,6 +67,9 @@ int vm_load_program(VM *vm, const char *filename)
     vm->registers[REG_DS] = 0x00010000;            // Puntero al segmento de datos
     vm->registers[REG_IP] = vm->registers[REG_CS]; // IP apunta al inicio del code segment
 
+    //Inicia las instrucciones
+    init_instruction_table();
+
     vm->running = true;
     return 1;
 }
@@ -163,6 +95,7 @@ void vm_execute(VM *vm)
         // Leo el primer byte
         uint8_t first_byte = vm->memory[phys++];
         // Print para debbuging
+
         printf("First byte %X", first_byte);
         uint8_t type_b = first_byte >> 6;
         uint8_t type_a = (first_byte >> 4) & 0b0011;
@@ -179,11 +112,11 @@ void vm_execute(VM *vm)
         // Leo OP B
         uint16_t p = phys;
         uint32_t opb_bytes = 0;
-        if (type_b > 0x0)
+        if (type_b > 0x0) // = 00
             opb_bytes |= vm->memory[p++];
-        if (type_b > 0x1)
+        if (type_b > 0x1) // =01
             opb_bytes = (opb_bytes << 8) | vm->memory[p++];
-        if (type_b > 0x2)
+        if (type_b > 0x2) //10 y 11 ?
             opb_bytes = (opb_bytes << 16) | vm->memory[p++];
 
         // LEO OP A
@@ -211,6 +144,13 @@ void vm_execute(VM *vm)
         vm->registers[REG_IP] = (ip & 0xFFFF0000) | new_off;
 
         // Crear la ejecucion de la instruccion
+        InstructionFunc func = instruction_table[op_code];
+        if (func) {
+            func(vm);   // ejecutar instrucción
+        } else {
+            printf("Opcode 0x%02X no implementado\n", op_code);
+            vm->running = false;
+        }
     }
 }
 
