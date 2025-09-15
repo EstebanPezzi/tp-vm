@@ -219,7 +219,7 @@ void vm_execute(VM *vm)
         // Ejecución de la instrucción
         switch (vm->registers[REG_OPC])
         {
-        case 0x10: // MOV (código según "ASM MV1 2025.pdf")
+        case 0x10:
         {
             uint32_t src_value = get_operand_value(vm, vm->registers[REG_OP2]);
             set_operand_value(vm, vm->registers[REG_OP1], src_value);
@@ -228,7 +228,7 @@ void vm_execute(VM *vm)
         case 0x11:
         {
             uint32_t dest_value = get_operand_value(vm, vm->registers[REG_OP1]);
-            uint32_t src_value = get_operand_value(vm, vm->registers[REG_OP1]);
+            uint32_t src_value = get_operand_value(vm, vm->registers[REG_OP2]);
             uint32_t result = dest_value + src_value;
             set_operand_value(vm, vm->registers[REG_OP1], result);
 
