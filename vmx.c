@@ -219,13 +219,13 @@ void vm_execute(VM *vm)
         // Ejecución de la instrucción
         switch (vm->registers[REG_OPC])
         {
-        case 0x10:
+        case OPC_MOV:
         {
             uint32_t src_value = get_operand_value(vm, vm->registers[REG_OP2]);
             set_operand_value(vm, vm->registers[REG_OP1], src_value);
         }
         break;
-        case 0x11:
+        case OPC_ADD:
         {
             uint32_t dest_value = get_operand_value(vm, vm->registers[REG_OP1]);
             uint32_t src_value = get_operand_value(vm, vm->registers[REG_OP2]);
@@ -236,11 +236,26 @@ void vm_execute(VM *vm)
             uint32_t cc = vm->registers[REG_CC];
             cc &= 0x3FFFFFFF;
             cc |= (result & 0x80000000) ? 0x80000000 : 0; // Bit 31 = N (signo)
-            cc |= (result == 0) ? 0x40000000 : 0; // Bit 30 = Z (cero)
-            vm->registers[17] = cc;
+            cc |= (result == 0) ? 0x40000000 : 0;         // Bit 30 = Z (cero)
+            vm->registers[REG_CC] = cc;
         }
         break;
-        case 0x1F: // STOP
+        case OPC_SUB:
+        {
+            uint32_t dest_value = get_operand_value(vm, vm->registers[REG_OP1]);
+            uint32_t src_value = get_operand_value(vm, vm->registers[REG_OP2]);
+            uint32_t result = dest_value - src_value;
+            set_operand_value(vm, vm->registers[REG_OP1], result);
+
+            // Actualizar el cc
+            uint32_t cc = vm->registers[REG_CC];
+            cc &= 0x3FFFFFFF;
+            cc |= (result & 0x80000000) ? 0x80000000 : 0; // Bit 31 = N (signo)
+            cc |= (result == 0) ? 0x40000000 : 0;         // Bit 30 = Z (cero)
+            vm->registers[REG_CC] = cc;
+        }
+        break;
+        case OPC_STOP: // STOP
             vm->registers[REG_IP] = 0xFFFFFFFF;
             vm->running = false;
             break;
@@ -304,7 +319,7 @@ uint32_t vm_memory_write(VM *vm, uint32_t logical_addr, uint8_t num_bytes, uint3
     if (phys == (uint32_t)-1)
         return false;
     vm->registers[REG_MAR] |= (phys & 0xFFFF); // MAR baja = memoria fisica
-    vm->registers[REG_MBR] = value; // MBR valor a escribir
+    vm->registers[REG_MBR] = value;            // MBR valor a escribir
 
     for (uint8_t i = 0; i < num_bytes; i++)
         vm->memory[phys + i] = (value >> (i * 8) & 0xFF);
