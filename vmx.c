@@ -18,7 +18,7 @@ void vm_init(VM *vm)
 
 int vm_load_program(VM *vm, const char *filename)
 {
-    FILE *file = fopen(filenaSIme, "rb");
+    FILE *file = fopen(filename, "rb");
     if (!file)
     {
         return 0;
@@ -77,6 +77,7 @@ void vm_execute(VM *vm)
     {
         // FETCH: Lee la instruccion desde el IP
         uint32_t ip = vm->registers[REG_IP];
+        printf("\n[VM] IP = %08X\n", ip); //DEBUG
 
         uint16_t seg = ip >> 16;
         uint16_t offset = ip & 0xFFFF;
@@ -91,12 +92,11 @@ void vm_execute(VM *vm)
         uint16_t phys = base + offset;
         // Leo el primer byte
         uint8_t first_byte = vm->memory[phys++];
-        // Print para debbuging
-
-        printf("First byte %X", first_byte);
+        printf("[VM] First byte = %02X\n", first_byte);
         uint8_t type_b = first_byte >> 6;
         uint8_t type_a = (first_byte >> 4) & 0b0011;
         uint8_t op_code = first_byte & 0x1F;
+        printf("[VM] Opcode = %02X, type_a = %d, type_b = %d\n", op_code, type_a, type_b);
 
         if (op_code > 0x1F)
         {
@@ -109,11 +109,11 @@ void vm_execute(VM *vm)
         // Leo OP B
         uint16_t p = phys;
         uint32_t opb_bytes = 0;
-        if (type_b > 0x0) // = 00
+        if (type_b > 0x0)
             opb_bytes |= vm->memory[p++];
-        if (type_b > 0x1) // =01
+        if (type_b > 0x1)
             opb_bytes = (opb_bytes << 8) | vm->memory[p++];
-        if (type_b > 0x2) //10 y 11 ?
+        if (type_b > 0x2)
             opb_bytes = (opb_bytes << 16) | vm->memory[p++];
 
         // LEO OP A
@@ -124,6 +124,8 @@ void vm_execute(VM *vm)
             opa_bytes = (opa_bytes << 8) | vm->memory[p++];
         if (type_a > 2)
             opa_bytes = (opa_bytes << 16) | vm->memory[p++];
+
+        printf("[VM] OP1 raw = %08X, OP2 raw = %08X\n", (type_a << 24) | opa_bytes, (type_b << 24) | opb_bytes);
 
         // Seteo OP1 y OP2
         vm->registers[REG_OP1] = (type_a << 24) | opa_bytes;
@@ -156,6 +158,7 @@ int main(int argc, char **argv)
     printf("Cant args %d\n", argc);
     VM vm;
     init_instruction_table(); // Inicializa la tabla de instrucciones
+
     // Comentado para Debbugear
     // if (argc < 2)
     //     return 1;
@@ -175,5 +178,10 @@ int main(int argc, char **argv)
     }
 
     vm_execute(&vm);
+    printf("\nEstado final de los registros:\n");
+    printf("EAX = %08X\n", vm.registers[REG_EAX]);
+    printf("EBX = %08X\n", vm.registers[REG_EBX]);
+    printf("AC = %08X\n", vm.registers[REG_AC]);
+    printf("CC = %08X\n", vm.registers[REG_CC]);
     return 0;
 }
