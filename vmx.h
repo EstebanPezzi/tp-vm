@@ -75,11 +75,6 @@ typedef struct
     bool running;
 } VM;
 
-//Para operandos
-typedef struct {
-    uint8_t tipo;    // OP_TYPE_…
-    uint32_t valor;  // valor
-} Operand;
 
 // Funciones principales
 void vm_init(VM *vm);
@@ -87,9 +82,5 @@ int vm_load_program(VM *vm, const char *filename);
 void vm_execute(VM *vm);
 typedef void (*InstructionFunc)(VM *vm); // Para el vector punto a función
   
-
-
-
-
 
 #endif

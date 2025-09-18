@@ -5,21 +5,20 @@
 #include <string.h>
 
 #include "vmx.h"
-#include "instructions.c" //<- me parece que no esta bueno, solucion x ahora
+#include "instructions.h"
 
 void vm_init(VM *vm)
 {
     memset(vm->memory, 0, MEMORY_SIZE);
     memset(vm->segment_table, 0, sizeof(vm->segment_table));
     memset(vm->registers, 0, sizeof(vm->registers));
-    memset(instruction_table, 0, sizeof(instruction_table)); //Pone todo en NULL
     srand(time(NULL)); //semilla distinta cada vez que ejecuto el programa para funcion rand()
     vm->running = false;
 }
 
 int vm_load_program(VM *vm, const char *filename)
 {
-    FILE *file = fopen("test.vmx", "rb");
+    FILE *file = fopen(filenaSIme, "rb");
     if (!file)
     {
         return 0;
@@ -67,8 +66,6 @@ int vm_load_program(VM *vm, const char *filename)
     vm->registers[REG_DS] = 0x00010000;            // Puntero al segmento de datos
     vm->registers[REG_IP] = vm->registers[REG_CS]; // IP apunta al inicio del code segment
 
-    //Inicia las instrucciones
-    init_instruction_table();
 
     vm->running = true;
     return 1;
@@ -158,6 +155,7 @@ int main(int argc, char **argv)
 {
     printf("Cant args %d\n", argc);
     VM vm;
+    init_instruction_table(); // Inicializa la tabla de instrucciones
     // Comentado para Debbugear
     // if (argc < 2)
     //     return 1;
