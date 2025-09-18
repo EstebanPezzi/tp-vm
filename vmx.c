@@ -150,6 +150,7 @@ void vm_execute(VM *vm)
             printf("Opcode 0x%02X no implementado\n", op_code);
             vm->running = false;
         }
+           printf("[DEBUG] IP = %08X\n", vm->registers[REG_IP]);
     }
 }
 
@@ -181,6 +182,7 @@ int main(int argc, char **argv)
     printf("\nEstado final de los registros:\n");
     printf("EAX = %08X\n", vm.registers[REG_EAX]);
     printf("EBX = %08X\n", vm.registers[REG_EBX]);
+    printf("EDX = %08X\n", vm.registers[REG_EDX]);
     printf("AC = %08X\n", vm.registers[REG_AC]);
     printf("CC = %08X\n", vm.registers[REG_CC]);
     return 0;

@@ -45,6 +45,7 @@ uint32_t translate_logical(VM *vm, uint32_t logical_addr, uint16_t num_bytes)
 {
     uint16_t seg = (logical_addr >> 16) & 0xFFFF;
     uint16_t offset = logical_addr & 0xFFFF;
+
     if (seg >= SEGMENT_TABLE_SIZE)
     {
         printf("Fallo de segmento: codigo %u excede tabla.\n", seg);
@@ -182,6 +183,7 @@ void instr_ADD(VM *vm){
     int32_t val1 = get_operand_value(vm, vm->registers[REG_OP1]);
     int32_t val2 = get_operand_value(vm, vm->registers[REG_OP2]);
 
+    
     int32_t result = val1 + val2;
 
     set_operand_value( vm, vm->registers[REG_OP1], result);
@@ -335,6 +337,7 @@ void instr_LDH(VM *vm) {
     // No modificamos CC
 }
 
+//hay algo que no anda
 void instr_LDL(VM *vm) {
     int32_t val1 = get_operand_value(vm, vm->registers[REG_OP1]); //destino
     int32_t val2 = get_operand_value(vm, vm->registers[REG_OP2]); //fuente
@@ -365,7 +368,8 @@ void instr_RND(VM *vm){
 
 //Revisar
 void instr_SYS(VM *vm){ 
-    uint32_t mode = vm->registers[REG_EAX];
+    uint32_t op_mode = get_operand_value(vm, vm->registers[REG_OP2]); // 1=READ, 2=WRITE
+    uint32_t fmt = vm->registers[REG_EAX];  // formato: 0x01 DEC, 0x10 BIN, 0x08 HEX, 0x04 OCT, 0x02 CHAR
     uint32_t start_addr = vm->registers[REG_EDX];
     uint32_t ecx = vm->registers[REG_ECX];
 
@@ -373,27 +377,38 @@ void instr_SYS(VM *vm){
     uint16_t cell_count = ecx & 0xFFFF;
 
     for (int i = 0; i < cell_count; i++) {
-        uint32_t logical_addr = start_addr + i * cell_size; //?????
+        uint32_t logical_addr = start_addr + i * cell_size;
         uint32_t phys_addr = translate_logical(vm, logical_addr, cell_size);
-
         if (phys_addr == (uint32_t)-1) return;
 
-        printf("[%04X]: ", phys_addr);
-
-        if (mode == 1) { // READ
+        if (op_mode == 1) { // READ
             int value;
             scanf("%d", &value);
             vm_memory_write(vm, logical_addr, cell_size, value);
-        } else if (mode == 2) { // WRITE
+        } 
+        else if (op_mode == 2) { // WRITE
             uint32_t value = vm_memory_read(vm, logical_addr, cell_size);
-            printf("%d\n", value);
-        } else {
-            printf("Modo SYS inválido: %u\n", mode);
+            switch(fmt){
+                case 0x01: printf("%u\n", value); break; // DEC
+                case 0x10: { // BIN
+                    for(int b=cell_size*8-1;b>=0;b--) printf("%u",(value>>b)&1);
+                    printf("\n");
+                    break;
+                }
+                case 0x08: printf("%X\n", value); break; // HEX
+                case 0x04: printf("%o\n", value); break; // OCT
+                case 0x02: printf("%c\n", (char)value); break; // CHAR
+                default: printf("Formato inválido: 0x%X\n", fmt); vm->running=false; return;
+            }
+        } 
+        else {
+            printf("Modo SYS inválido: %u\n", op_mode);
             vm->running = false;
             return;
         }
     }
 }
+
 
 void instr_JMP(VM *vm){
     int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]); //Direccion del salto
@@ -405,7 +420,7 @@ void instr_JMP(VM *vm){
 void instr_JZ(VM *vm){
     
 
-    if (vm->registers[REG_CC] & 0x01){ //IF Z==1
+    if (vm->registers[REG_CC] & 0x40000000){ //IF Z==1
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
     }
@@ -414,7 +429,7 @@ void instr_JZ(VM *vm){
 void instr_JP(VM *vm){ //solo si N no es 1 revisar
     
 
-     if ((vm->registers[REG_CC] & 0x03) == 0) {  // N = 0 y Z = 0
+     if (!(vm->registers[REG_CC] & 0x80000000)) {  // N = 0 y Z = 0
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
     }
@@ -422,8 +437,7 @@ void instr_JP(VM *vm){ //solo si N no es 1 revisar
 
 void instr_JN(VM *vm){
     
-
-    if (vm->registers[REG_CC] & 0x02){ //IF N=1
+    if (vm->registers[REG_CC] & 0x80000000){ 
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
     }
@@ -432,12 +446,13 @@ void instr_JN(VM *vm){
 void instr_JNZ(VM *vm){
     
 
-    if ((vm->registers[REG_CC] & 0x01) == 0){ //IF Z==0
+    if (!(vm->registers[REG_CC] & 0x40000000)){ 
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
     }
 }
 
+//????
 void instr_JNP(VM *vm){
     
 
@@ -450,12 +465,13 @@ void instr_JNP(VM *vm){
 void instr_JNN(VM *vm){
     
 
-    if ((vm->registers[REG_CC] & 0x02) == 0){ //IF
+    if (! (vm->registers[REG_CC] & 0x80000000)){ //IF
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
     }
 }
 
+//Seria con el operando 2?
 void instr_NOT(VM *vm){
     int32_t val1 = get_operand_value(vm, vm->registers[REG_OP1]);
 
