@@ -1,5 +1,6 @@
 #include "vmx.h"
 #include "instructions.h"
+#include <stdio.h>
 
 
 InstructionFunc instruction_table[0x20];
