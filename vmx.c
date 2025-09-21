@@ -459,8 +459,8 @@ void vm_disassemble(VM *vm)
     printf("===========================\n\n");
 
     // CORREGIR: Base en HIGH bits, Tamaño en LOW bits
-    uint16_t base_phys = vm->segment_table[0] >> 16;    // Base física
-    uint16_t code_size = vm->segment_table[0] & 0xFFFF; // Tamaño del código
+    uint16_t base_phys = vm->segment_table[0] & 0xFFFF;    // Base física
+    uint16_t code_size = vm->segment_table[0] >> 16; // Tamaño del código
 
     uint32_t ip = 0;
 
