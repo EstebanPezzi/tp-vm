@@ -130,7 +130,7 @@ void vm_init(VM *vm)
 
 int vm_load_program(VM *vm, const char *filename)
 {
-    FILE *file = fopen(filename, "rb");
+    FILE *file = fopen("test.vmx", "rb");
     if (!file)
     {
         return 0;
@@ -165,15 +165,8 @@ int vm_load_program(VM *vm, const char *filename)
     fread(vm->memory, 1, code_size, file);
     fclose(file);
 
-    // Inicializar tabla de segmentos
-    // PREGUNTAR SI ES ASI O AL REVES
-    // Tabla de descriptores de segmentos
-    // Consta de 8 entradas de 32 bits, cada una se divide en dos partes: los primeros 2 bytes
-    // son para guardar la dirección física de comienzo del segmento (base) y los siguientes 2
-    // bytes la cantidad de bytes que ocupa. Se inicializa en el momento de la carga del programa.
-
-    vm->segment_table[0] = (0 << 16) | code_size;      // Base=0, Tamaño=code_size
-vm->segment_table[1] = (code_size << 16) | (MEMORY_SIZE - code_size); // Base=code_size, Tamaño=resto
+    vm->segment_table[0] = (code_size << 16) | 0;
+    vm->segment_table[1] = ((MEMORY_SIZE - code_size) << 16) | code_size;
     printf("tamanio data segment %d\n", MEMORY_SIZE - code_size);
 
     // Inicializar registros
@@ -284,86 +277,132 @@ void vm_execute(VM *vm)
 
 const char *get_mnemonic(uint8_t op_code)
 {
-    switch (op_code) {
-        case OPC_MOV: return "MOV";
-        case OPC_ADD: return "ADD";
-        case OPC_SUB: return "SUB";
-        case OPC_MUL: return "MUL";
-        case OPC_DIV: return "DIV";
-        case OPC_CMP: return "CMP";
-        case OPC_SHL: return "SHL";
-        case OPC_SHR: return "SHR";
-        case OPC_SAR: return "SAR";
-        case OPC_AND: return "AND";
-        case OPC_OR: return "OR";
-        case OPC_XOR: return "XOR";
-        case OPC_SWAP: return "SWAP";
-        case OPC_LDL: return "LDL";
-        case OPC_LDH: return "LDH";
-        case OPC_RND: return "RND";
-        case OPC_SYS: return "SYS";
-        case OPC_JMP: return "JMP";
-        case OPC_JZ: return "JZ";
-        case OPC_JP: return "JP";
-        case OPC_JN: return "JN";
-        case OPC_JNZ: return "JNZ";
-        case OPC_JNP: return "JNP";
-        case OPC_JNN: return "JNN";
-        case OPC_NOT: return "NOT";
-        case OPC_STOP: return "STOP";
-        default: return "???";
+    switch (op_code)
+    {
+    case OPC_MOV:
+        return "MOV";
+    case OPC_ADD:
+        return "ADD";
+    case OPC_SUB:
+        return "SUB";
+    case OPC_MUL:
+        return "MUL";
+    case OPC_DIV:
+        return "DIV";
+    case OPC_CMP:
+        return "CMP";
+    case OPC_SHL:
+        return "SHL";
+    case OPC_SHR:
+        return "SHR";
+    case OPC_SAR:
+        return "SAR";
+    case OPC_AND:
+        return "AND";
+    case OPC_OR:
+        return "OR";
+    case OPC_XOR:
+        return "XOR";
+    case OPC_SWAP:
+        return "SWAP";
+    case OPC_LDL:
+        return "LDL";
+    case OPC_LDH:
+        return "LDH";
+    case OPC_RND:
+        return "RND";
+    case OPC_SYS:
+        return "SYS";
+    case OPC_JMP:
+        return "JMP";
+    case OPC_JZ:
+        return "JZ";
+    case OPC_JP:
+        return "JP";
+    case OPC_JN:
+        return "JN";
+    case OPC_JNZ:
+        return "JNZ";
+    case OPC_JNP:
+        return "JNP";
+    case OPC_JNN:
+        return "JNN";
+    case OPC_NOT:
+        return "NOT";
+    case OPC_STOP:
+        return "STOP";
+    default:
+        return "???";
     }
 }
 
 const char *get_register_name(uint8_t reg_code)
 {
-    switch (reg_code) {
-        case REG_EAX: return "EAX";
-        case REG_EBX: return "EBX";
-        case REG_ECX: return "ECX";
-        case REG_EDX: return "EDX";
-        case REG_EEX: return "EEX";
-        case REG_EFX: return "EFX";
-        case REG_AC: return "AC";
-        case REG_CC: return "CC";
-        case REG_CS: return "CS";
-        case REG_DS: return "DS";
-        case REG_IP: return "IP";
-        default: return "R?";
+    switch (reg_code)
+    {
+    case REG_EAX:
+        return "EAX";
+    case REG_EBX:
+        return "EBX";
+    case REG_ECX:
+        return "ECX";
+    case REG_EDX:
+        return "EDX";
+    case REG_EEX:
+        return "EEX";
+    case REG_EFX:
+        return "EFX";
+    case REG_AC:
+        return "AC";
+    case REG_CC:
+        return "CC";
+    case REG_CS:
+        return "CS";
+    case REG_DS:
+        return "DS";
+    case REG_IP:
+        return "IP";
+    default:
+        return "R?";
     }
 }
 
-
 void disassemble_operand(VM *vm, uint8_t type, uint32_t value)
 {
-    switch (type) {
-        case OP_TYPE_NONE:
-            break;
-            
-        case OP_TYPE_REGISTER:
-            printf("%s", get_register_name(value & 0xFF));
-            break;
-            
-        case OP_TYPE_IMMEDIATE:
-            printf("%d", (int16_t)(value & 0xFFFF));
-            break;
-            
-        case OP_TYPE_MEMORY: {
-            uint8_t reg_code = (value >> 16) & 0xFF;
-            int16_t displacement = (int16_t)(value & 0xFFFF);
-            
-            printf("[");
-            if (reg_code != 0) {
-                printf("%s", get_register_name(reg_code));
-                if (displacement != 0) {
-                    printf("%+d", displacement);
-                }
-            } else {
-                printf("%d", displacement);
+    switch (type)
+    {
+    case OP_TYPE_NONE:
+        break;
+
+    case OP_TYPE_REGISTER:
+        printf("%s", get_register_name(value & 0xFF));
+        break;
+
+    case OP_TYPE_IMMEDIATE:
+        printf("%d", (int16_t)(value & 0xFFFF));
+        break;
+
+    case OP_TYPE_MEMORY:
+    {
+        uint8_t reg_code = (value >> 16) & 0xFF;
+        int16_t displacement = (int16_t)(value & 0xFFFF);
+
+        printf("[");
+        if (reg_code != 0)
+        {
+            printf("%s", get_register_name(reg_code));
+            if (displacement != 0)
+            {
+                printf("%+d", displacement);
             }
-            printf("]");
-            break;
         }
+        else
+        {
+            printf("%d", displacement);
+        }
+        printf("]");
+        break;
+    }
     }
 }
 
@@ -375,30 +414,38 @@ void disassemble_instruction(VM *vm, uint32_t phys_addr, uint8_t op_code, uint8_
     // Leer operandos de la memoria
     uint32_t opa_value = 0, opb_value = 0;
     int offset = 1;
-    
+
     // Leer operando B (si existe)
-    if (type_b > 0) {
-        for (int i = 0; i < type_b; i++) {
+    if (type_b > 0)
+    {
+        for (int i = 0; i < type_b; i++)
+        {
             opb_value = (opb_value << 8) | vm->memory[phys_addr + offset + i];
         }
         offset += type_b;
     }
-    
+
     // Leer operando A (si existe)
-    if (type_a > 0) {
-        for (int i = 0; i < type_a; i++) {
+    if (type_a > 0)
+    {
+        for (int i = 0; i < type_a; i++)
+        {
             opa_value = (opa_value << 8) | vm->memory[phys_addr + offset + i];
         }
     }
 
     // Mostrar operandos según el tipo de instrucción
-    if (op_code == OPC_SYS || op_code == OPC_NOT) {
+    if (op_code == OPC_SYS || op_code == OPC_NOT)
+    {
         // Instrucciones de un operando (usan OPB)
         disassemble_operand(vm, type_b, opb_value);
-    } else {
+    }
+    else
+    {
         // Instrucciones de dos operandos
         disassemble_operand(vm, type_a, opa_value);
-        if (type_b > 0) {
+        if (type_b > 0)
+        {
             printf(", ");
             disassemble_operand(vm, type_b, opb_value);
         }
@@ -411,45 +458,47 @@ void vm_disassemble(VM *vm)
     printf("Disassembling code segment:\n");
     printf("===========================\n\n");
 
-     // CORREGIR: Base en HIGH bits, Tamaño en LOW bits
-    uint16_t base_phys = vm->segment_table[0] >> 16;  // Base física
-    uint16_t code_size = vm->segment_table[0] & 0xFFFF;  // Tamaño del código
+    // CORREGIR: Base en HIGH bits, Tamaño en LOW bits
+    uint16_t base_phys = vm->segment_table[0] >> 16;    // Base física
+    uint16_t code_size = vm->segment_table[0] & 0xFFFF; // Tamaño del código
 
-    
     uint32_t ip = 0;
 
-    while (ip < code_size) {
-        
+    while (ip < code_size)
+    {
+
         uint32_t phys_addr = base_phys + ip;
         uint8_t first_byte = vm->memory[phys_addr];
-        
-        
+
         // Decodificar instrucción
         uint8_t type_b = first_byte >> 6;
         uint8_t type_a = (first_byte >> 4) & 0b0011;
         uint8_t op_code = first_byte & 0x1F;
-        
+
         int instr_len = 1 + type_a + type_b;
-        
+
         // Leer bytes completos de la instrucción
         uint8_t instr_bytes[6] = {0};
-        for (int i = 0; i < instr_len && i < 6; i++) {
+        for (int i = 0; i < instr_len && i < 6; i++)
+        {
             instr_bytes[i] = vm->memory[phys_addr + i];
         }
 
         // Desensamblar
         printf("[%04X] ", phys_addr);
-        for (int i = 0; i < instr_len; i++) {
+        for (int i = 0; i < instr_len; i++)
+        {
             printf("%02X ", instr_bytes[i]);
         }
-        for (int i = instr_len; i < 6; i++) {
+        for (int i = instr_len; i < 6; i++)
+        {
             printf("   ");
         }
         printf("| ");
-        
+
         // Mostrar mnemónico y operandos
         disassemble_instruction(vm, phys_addr, op_code, type_a, type_b);
-        
+
         ip += instr_len;
     }
 }
@@ -481,20 +530,22 @@ int main(int argc, char **argv)
     vm_init(&vm);
 
     // 3. Cargar el programa SOLO si necesitamos ejecutarlo
-    if (vm_load_program(&vm, filename) <= 0) {
+    if (vm_load_program(&vm, filename) <= 0)
+    {
         printf("Error: no se pudo cargar el archivo '%s'\n", filename);
         return 1;
     }
 
     // 4. Si es modo disassemble, mostrar y salir
-    if (disassemble) {
+    if (disassemble)
+    {
         vm_disassemble(&vm);
-        return 0;  // ← IMPORTANTE: salir después de desensamblar
+        return 0; // ← IMPORTANTE: salir después de desensamblar
     }
 
     // 5. Si no, ejecutar normalmente
     vm_execute(&vm);
-    
+
     printf("\nEstado final de los registros:\n");
     printf("EAX = %08X\n", vm.registers[REG_EAX]);
     printf("EBX = %08X\n", vm.registers[REG_EBX]);
@@ -502,7 +553,7 @@ int main(int argc, char **argv)
     printf("EDX = %08X\n", vm.registers[REG_EDX]);
     printf("AC = %08X\n", vm.registers[REG_AC]);
     printf("CC = %08X\n", vm.registers[REG_CC]);
-    
+
     return 0;
 }
 
@@ -896,92 +947,116 @@ void instr_SYS(VM *vm)
     printf("[SYS] Llamada: %u, Formato: 0x%02X, Dirección: 0x%08X\n", sys_call, eax, edx);
     printf("[SYS] Celdas: %u, Tamaño: %u bytes\n", cell_count, cell_size);
 
-    if (cell_size == 0 || cell_size > 4) {
+    if (cell_size == 0 || cell_size > 4)
+    {
         printf("ERROR: Tamaño de celda inválido %u\n", cell_size);
         vm->running = false;
         return;
     }
 
-    if (sys_call == 1) { // READ
-        for (int i = 0; i < cell_count; i++) {
+    if (sys_call == 1)
+    { // READ
+        for (int i = 0; i < cell_count; i++)
+        {
             uint32_t current_addr = edx + (i * cell_size);
             printf("[%04X]: ", current_addr);
-            
+
             int32_t value = 0;
             int scan_result = 0;
-            
+
             // Leer según el formato especificado en EAX
-            if (eax & 0x01) { // Decimal
+            if (eax & 0x01)
+            { // Decimal
                 scan_result = scanf("%d", &value);
-            } 
-            else if (eax & 0x02) { // Carácter
+            }
+            else if (eax & 0x02)
+            { // Carácter
                 char c;
                 scan_result = scanf(" %c", &c);
                 value = (int32_t)c;
             }
-            else if (eax & 0x04) { // Octal
+            else if (eax & 0x04)
+            { // Octal
                 scan_result = scanf("%o", &value);
             }
-            else if (eax & 0x08) { // Hexadecimal
+            else if (eax & 0x08)
+            { // Hexadecimal
                 scan_result = scanf("%x", &value);
             }
-            else if (eax & 0x10) { // Binario
+            else if (eax & 0x10)
+            { // Binario
                 char bin_str[33];
                 scan_result = scanf("%32s", bin_str);
-                if (scan_result == 1) {
+                if (scan_result == 1)
+                {
                     value = (int32_t)strtol(bin_str, NULL, 2);
                 }
             }
-            else {
+            else
+            {
                 printf("ERROR: Formato no soportado 0x%02X\n", eax);
                 vm->running = false;
                 return;
             }
 
-            if (scan_result != 1) {
+            if (scan_result != 1)
+            {
                 printf("ERROR: Entrada inválida\n");
                 vm->running = false;
                 return;
             }
 
             // Escribir en memoria
-            if (!vm_memory_write(vm, current_addr, cell_size, value)) {
+            if (!vm_memory_write(vm, current_addr, cell_size, value))
+            {
                 printf("ERROR: Escritura en memoria falló\n");
                 vm->running = false;
                 return;
             }
         }
     }
-    else if (sys_call == 2) { // WRITE
-        for (int i = 0; i < cell_count; i++) {
+    else if (sys_call == 2)
+    { // WRITE
+        for (int i = 0; i < cell_count; i++)
+        {
             uint32_t current_addr = edx + (i * cell_size);
             uint32_t value = vm_memory_read(vm, current_addr, cell_size);
-            
+
             printf("[%04X]: ", current_addr);
-            
+
             // Mostrar según el formato especificado en EAX
-            if (eax & 0x01) { // Decimal
+            if (eax & 0x01)
+            { // Decimal
                 printf("%d", value);
             }
-            else if (eax & 0x02) { // Carácter
-                if (value >= 32 && value <= 126) {
+            else if (eax & 0x02)
+            { // Carácter
+                if (value >= 32 && value <= 126)
+                {
                     printf("%c", (char)value);
-                } else {
+                }
+                else
+                {
                     printf(".");
                 }
             }
-            else if (eax & 0x04) { // Octal
+            else if (eax & 0x04)
+            { // Octal
                 printf("%o", value);
             }
-            else if (eax & 0x08) { // Hexadecimal
+            else if (eax & 0x08)
+            { // Hexadecimal
                 printf("%X", value);
             }
-            else if (eax & 0x10) { // Binario
-                for (int bit = (cell_size * 8) - 1; bit >= 0; bit--) {
+            else if (eax & 0x10)
+            { // Binario
+                for (int bit = (cell_size * 8) - 1; bit >= 0; bit--)
+                {
                     printf("%d", (value >> bit) & 1);
                 }
             }
-            else {
+            else
+            {
                 printf("ERROR: Formato no soportado 0x%02X", eax);
                 vm->running = false;
                 return;
@@ -989,7 +1064,8 @@ void instr_SYS(VM *vm)
             printf("\n");
         }
     }
-    else {
+    else
+    {
         printf("ERROR: Llamada al sistema inválida %u\n", sys_call);
         vm->running = false;
     }
