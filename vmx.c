@@ -238,13 +238,14 @@ void vm_execute(VM *vm)
         printf("[VM] OP1 raw = %08X, OP2 raw = %08X\n", (type_a << 24) | opa_bytes, (type_b << 24) | opb_bytes);
 
         // Seteo OP1 y OP2
-        if (op_code != 0x8 && op_code != 0X0 && op_code != OPC_JMP) // Si no es NOT o SYS
-        {
+        if (op_code != 0x8 && op_code != 0X0 && op_code != OPC_JMP && op_code != OPC_JZ && op_code != OPC_JP && op_code != OPC_JN && op_code != OPC_JNZ && op_code != OPC_JNP && op_code != OPC_JNN) // Si no es NOT o SYS
+        {   
+            //2 operandos.
             vm->registers[REG_OP1] = (type_a << 24) | opa_bytes;
             vm->registers[REG_OP2] = (type_b << 24) | opb_bytes;
             vm->registers[REG_OPC] = op_code;
         }
-        else // Si es NOT o SYS ponemos en el registro OP1 opb_bytes y tipo
+        else // Si tiene un solo operando ponemos en el registro OP1 opb_bytes y tipo
         {
             vm->registers[REG_OP1] = (type_b << 24) | opb_bytes;
             vm->registers[REG_OPC] = op_code;
@@ -1081,7 +1082,7 @@ void instr_JMP(VM *vm)
 void instr_JZ(VM *vm)
 {
 
-    if (vm->registers[REG_CC] & 0x40000000)
+    if (vm->registers[REG_CC] & 0x40000000) // Z=1
     { // IF Z==1
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
@@ -1089,10 +1090,10 @@ void instr_JZ(VM *vm)
 }
 
 void instr_JP(VM *vm)
-{ // solo si N no es 1 revisar
+{ 
 
-    if (!(vm->registers[REG_CC] & 0x80000000))
-    { // N = 0 y Z = 0
+    if (!(vm->registers[REG_CC] & 0x40000000) && !(vm->registers[REG_CC] & 0x80000000))
+    { 
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
     }
@@ -1101,7 +1102,7 @@ void instr_JP(VM *vm)
 void instr_JN(VM *vm)
 {
 
-    if (vm->registers[REG_CC] & 0x80000000)
+    if (vm->registers[REG_CC] & 0x80000000) //N =1
     {
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
@@ -1111,17 +1112,16 @@ void instr_JN(VM *vm)
 void instr_JNZ(VM *vm)
 {
 
-    if (!(vm->registers[REG_CC] & 0x40000000))
+    if ((vm->registers[REG_CC] & 0x80000000) || (!(vm->registers[REG_CC] & 0x40000000) && !(vm->registers[REG_CC] & 0x80000000)))
     {
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
     }
 }
 
-//????
 void instr_JNP(VM *vm)
 {
-    if ((vm->registers[REG_CC] & 0x03) != 0)
+    if ((vm->registers[REG_CC] & 0x80000000) || (vm->registers[REG_CC] & 0x40000000))
     { // IF  Z o N activas
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
@@ -1131,7 +1131,7 @@ void instr_JNP(VM *vm)
 void instr_JNN(VM *vm)
 {
 
-    if (!(vm->registers[REG_CC] & 0x80000000))
+    if ((vm->registers[REG_CC] & 0x40000000) || (!(vm->registers[REG_CC] & 0x40000000) && !(vm->registers[REG_CC] & 0x80000000)))
     { // IF
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
