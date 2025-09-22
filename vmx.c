@@ -238,13 +238,13 @@ void vm_execute(VM *vm)
         printf("[VM] OP1 raw = %08X, OP2 raw = %08X\n", (type_a << 24) | opa_bytes, (type_b << 24) | opb_bytes);
 
         // Seteo OP1 y OP2
-        if (op_code != 0x8 && op_code != 0X0) // Si no es NOT o SYS
+        if (op_code != 0x8 && op_code != 0X0 && op_code != OPC_JMP) // Si no es NOT o SYS
         {
             vm->registers[REG_OP1] = (type_a << 24) | opa_bytes;
             vm->registers[REG_OP2] = (type_b << 24) | opb_bytes;
             vm->registers[REG_OPC] = op_code;
         }
-        else // Si es NOT ponemos en el registro OP1 opb_bytes y tipo
+        else // Si es NOT o SYS ponemos en el registro OP1 opb_bytes y tipo
         {
             vm->registers[REG_OP1] = (type_b << 24) | opb_bytes;
             vm->registers[REG_OPC] = op_code;
@@ -759,8 +759,7 @@ void instr_MUL(VM *vm)
     int32_t val2 = get_operand_value(vm, vm->registers[REG_OP2]);
 
     int64_t result = (int64_t)val1 * (int64_t)val2; // para detectar overflow
-    int32_t truncated = (int32_t)result;            // si hubo overflow perdes datos. analizar
-
+    int32_t truncated = (int32_t)result;            
     set_operand_value(vm, vm->registers[REG_OP1], result);
 
     update_flags(vm, truncated); // Actualiza el registro CC.
