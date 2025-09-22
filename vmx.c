@@ -130,7 +130,7 @@ void vm_init(VM *vm)
 
 int vm_load_program(VM *vm, const char *filename)
 {
-    FILE *file = fopen("test.vmx", "rb");
+    FILE *file = fopen(filename, "rb");
     if (!file)
     {
         return 0;
