@@ -153,7 +153,6 @@ int vm_load_program(VM *vm, const char *filename)
 
     uint8_t version;
     fread(&version, 1, 1, file);
-    printf("%d\n", version);
     if (version != 1)
     {
         fclose(file);
@@ -163,7 +162,6 @@ int vm_load_program(VM *vm, const char *filename)
     uint8_t code_size_bytes[2];
     fread(code_size_bytes, 1, 2, file);
     uint16_t code_size = (code_size_bytes[0] << 8) | code_size_bytes[1]; // Big-endian: byte0=alto, byte1=bajo
-    printf("Code size %u\n", code_size); // Cambia %x a %u para decimal
 
     // Cargar el codigo en la memoria
     fread(vm->memory, 1, code_size, file);
@@ -171,7 +169,6 @@ int vm_load_program(VM *vm, const char *filename)
 
     vm->segment_table[0] = (code_size << 16) | 0;
     vm->segment_table[1] = ((MEMORY_SIZE - code_size) << 16) | code_size;
-    printf("tamanio data segment %d\n", MEMORY_SIZE - code_size);
 
     // Inicializar registros
     vm->registers[REG_CS] = 0x00000000;            // Puntero al segmento de codigo
@@ -188,7 +185,6 @@ void vm_execute(VM *vm)
     {
         // FETCH: Lee la instruccion desde el IP
         uint32_t ip = vm->registers[REG_IP];
-        printf("\n[VM] IP = %08X\n", ip); // DEBUG
 
         uint16_t seg = ip >> 16;
         uint16_t offset = ip & 0xFFFF;
@@ -203,15 +199,12 @@ void vm_execute(VM *vm)
         uint16_t phys = base + offset;
         // Leo el primer byte
         uint8_t first_byte = vm->memory[phys++];
-        printf("[VM] First byte = %02X\n", first_byte);
         uint8_t type_b = first_byte >> 6;
         uint8_t type_a = (first_byte >> 4) & 0b0011;
         uint8_t op_code = first_byte & 0x1F;
-        printf("[VM] Opcode = %02X, type_a = %d, type_b = %d\n", op_code, type_a, type_b);
 
         if (op_code > 0x1F)
         {
-            printf("Instruccion invalida 0x%02X en %04X\n", first_byte, phys);
             break;
         }
 
@@ -220,36 +213,26 @@ void vm_execute(VM *vm)
         // Leo OP B
         uint16_t p = phys;
         uint32_t opb_bytes = 0x0;
-        uint32_t opb_bytes = 0x0;
         if (type_b > 0x0)
             opb_bytes |= vm->memory[p++];
         if (type_b > 0x1)
             opb_bytes = (opb_bytes << 8) | vm->memory[p++];
         if (type_b > 0x2)
             opb_bytes = (opb_bytes << 8) | vm->memory[p++];
-            opb_bytes = (opb_bytes << 8) | vm->memory[p++];
 
         // LEO OP A
         uint32_t opa_bytes = 0;
         if (type_a > 0)
             opa_bytes |= vm->memory[p++];
-        printf("\n%x\n", opa_bytes);
-        printf("\n%x\n", opa_bytes);
         if (type_a > 1)
-            opa_bytes <<= 8 | vm->memory[p++];
-        printf("\n%x\n", opa_bytes);
-        if (type_a > 2)
-            opa_bytes <<= 8 | vm->memory[p++];
-        printf("\n%x\n", opa_bytes);
             opa_bytes = (opa_bytes << 8) | vm->memory[p++];
-        printf("\n%x\n", opa_bytes);
-
-        printf("[VM] OP1 raw = %08X, OP2 raw = %08X\n", (type_a << 24) | opa_bytes, (type_b << 24) | opb_bytes);
+        if (type_a > 2)
+            opa_bytes = (opa_bytes << 8) | vm->memory[p++];
 
         // Seteo OP1 y OP2
         if (op_code != 0x8 && op_code != 0X0 && op_code != OPC_JMP && op_code != OPC_JZ && op_code != OPC_JP && op_code != OPC_JN && op_code != OPC_JNZ && op_code != OPC_JNP && op_code != OPC_JNN) // Si no es NOT o SYS
-        {   
-            //2 operandos.
+        {
+            // 2 operandos.
             vm->registers[REG_OP1] = (type_a << 24) | opa_bytes;
             vm->registers[REG_OP2] = (type_b << 24) | opb_bytes;
             vm->registers[REG_OPC] = op_code;
@@ -278,10 +261,8 @@ void vm_execute(VM *vm)
         }
         else
         {
-            printf("Opcode 0x%02X no implementado\n", op_code);
             vm->running = false;
         }
-        printf("[DEBUG] IP = %08X\n", vm->registers[REG_IP]);
     }
 }
 
@@ -397,7 +378,6 @@ void disassemble_operand(VM *vm, uint8_t type, uint32_t value)
         uint8_t reg_code = (value >> 16) & 0xFF;
         int16_t displacement = (int16_t)(value & 0xFFFF);
 
-        printf("[");
         if (reg_code != 0)
         {
             printf("%s", get_register_name(reg_code));
@@ -469,8 +449,8 @@ void vm_disassemble(VM *vm)
     printf("===========================\n\n");
 
     // CORREGIR: Base en HIGH bits, Tamaño en LOW bits
-    uint16_t base_phys = vm->segment_table[0] & 0xFFFF;    // Base física
-    uint16_t code_size = vm->segment_table[0] >> 16; // Tamaño del código
+    uint16_t base_phys = vm->segment_table[0] & 0xFFFF; // Base física
+    uint16_t code_size = vm->segment_table[0] >> 16;    // Tamaño del código
 
     uint32_t ip = 0;
 
@@ -519,16 +499,21 @@ int main(int argc, char **argv)
     const char *filename = NULL;
 
     // 1. PRIMERO parsear argumentos
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-d") == 0) {
+    for (int i = 1; i < argc; i++)
+    {
+        if (strcmp(argv[i], "-d") == 0)
+        {
             disassemble = true;
-        } else {
+        }
+        else
+        {
             filename = argv[i];
         }
     }
 
     // 2. Validar que se pasó un filename
-    if (!filename) {
+    if (!filename)
+    {
         printf("Uso: vmx <archivo.vmx> [-d]\n");
         return 1;
     }
@@ -546,23 +531,14 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // 4. Si es modo disassemble, mostrar y salir
+    // 4. Si es modo disassemble, mostrar
     if (disassemble)
     {
         vm_disassemble(&vm);
-        return 0; // ← IMPORTANTE: salir después de desensamblar
     }
 
     // 5. Si no, ejecutar normalmente
     vm_execute(&vm);
-
-    printf("\nEstado final de los registros:\n");
-    printf("EAX = %08X\n", vm.registers[REG_EAX]);
-    printf("EBX = %08X\n", vm.registers[REG_EBX]);
-    printf("ECX = %08X\n", vm.registers[REG_ECX]);
-    printf("EDX = %08X\n", vm.registers[REG_EDX]);
-    printf("AC = %08X\n", vm.registers[REG_AC]);
-    printf("CC = %08X\n", vm.registers[REG_CC]);
 
     return 0;
 }
@@ -611,7 +587,6 @@ uint32_t translate_logical(VM *vm, uint32_t logical_addr, uint16_t num_bytes)
 
     if (seg >= SEGMENT_TABLE_SIZE)
     {
-        printf("Fallo de segmento: codigo %u excede tabla.\n", seg);
         vm->running = false;
         return -1;
     }
@@ -621,7 +596,6 @@ uint32_t translate_logical(VM *vm, uint32_t logical_addr, uint16_t num_bytes)
     uint16_t seg_size = (entry >> 16) & 0xFFFF;
     if (offset + num_bytes > seg_size)
     {
-        printf("Fallo de segmento: acceso fuera de lmites (offset %u + %u > %u).\n", offset, num_bytes, seg_size);
         vm->running = false;
         return -1;
     }
@@ -699,7 +673,6 @@ void set_operand_value(VM *vm, uint32_t op_reg, uint32_t value)
 {
     uint8_t type = (op_reg >> 24) & 0xFF;
     uint32_t value_field = op_reg & 0x00FFFFFF;
-    printf("\n %x \n", type);
     if (type == OP_TYPE_REGISTER)
         vm->registers[value_field] = value;
     else if (type == OP_TYPE_MEMORY)
@@ -769,7 +742,7 @@ void instr_MUL(VM *vm)
     int32_t val2 = get_operand_value(vm, vm->registers[REG_OP2]);
 
     int64_t result = (int64_t)val1 * (int64_t)val2; // para detectar overflow
-    int32_t truncated = (int32_t)result;            
+    int32_t truncated = (int32_t)result;
     set_operand_value(vm, vm->registers[REG_OP1], result);
 
     update_flags(vm, truncated); // Actualiza el registro CC.
@@ -953,12 +926,8 @@ void instr_SYS(VM *vm)
     uint16_t cell_size = (ecx >> 16) & 0xFFFF;
     uint16_t cell_count = ecx & 0xFFFF;
 
-    printf("[SYS] Llamada: %u, Formato: 0x%02X, Dirección: 0x%08X\n", sys_call, eax, edx);
-    printf("[SYS] Celdas: %u, Tamaño: %u bytes\n", cell_count, cell_size);
-
     if (cell_size == 0 || cell_size > 4)
     {
-        printf("ERROR: Tamaño de celda inválido %u\n", cell_size);
         vm->running = false;
         return;
     }
@@ -1003,14 +972,12 @@ void instr_SYS(VM *vm)
             }
             else
             {
-                printf("ERROR: Formato no soportado 0x%02X\n", eax);
                 vm->running = false;
                 return;
             }
 
             if (scan_result != 1)
             {
-                printf("ERROR: Entrada inválida\n");
                 vm->running = false;
                 return;
             }
@@ -1018,7 +985,6 @@ void instr_SYS(VM *vm)
             // Escribir en memoria
             if (!vm_memory_write(vm, current_addr, cell_size, value))
             {
-                printf("ERROR: Escritura en memoria falló\n");
                 vm->running = false;
                 return;
             }
@@ -1066,7 +1032,6 @@ void instr_SYS(VM *vm)
             }
             else
             {
-                printf("ERROR: Formato no soportado 0x%02X", eax);
                 vm->running = false;
                 return;
             }
@@ -1075,7 +1040,6 @@ void instr_SYS(VM *vm)
     }
     else
     {
-        printf("ERROR: Llamada al sistema inválida %u\n", sys_call);
         vm->running = false;
     }
 }
@@ -1092,17 +1056,17 @@ void instr_JZ(VM *vm)
 {
 
     if (vm->registers[REG_CC] & 0x40000000) // Z=1
-    { // IF Z==1
+    {                                       // IF Z==1
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
     }
 }
 
 void instr_JP(VM *vm)
-{ 
+{
 
     if (!(vm->registers[REG_CC] & 0x40000000) && !(vm->registers[REG_CC] & 0x80000000))
-    { 
+    {
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
     }
@@ -1111,7 +1075,7 @@ void instr_JP(VM *vm)
 void instr_JN(VM *vm)
 {
 
-    if (vm->registers[REG_CC] & 0x80000000) //N =1
+    if (vm->registers[REG_CC] & 0x80000000) // N =1
     {
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
@@ -1151,10 +1115,8 @@ void instr_JNN(VM *vm)
 void instr_NOT(VM *vm)
 {
     uint32_t val1 = get_operand_value(vm, vm->registers[REG_OP1]);
-    printf("VALOR%X\n", val1);
 
     uint32_t result = ~val1; // Negación bit a bit
-    printf("VALOR INVERTIDO%X\n", result);
     set_operand_value(vm, vm->registers[REG_OP1], result); // Guardar el resultado
 
     update_flags(vm, result); // Actualiza el registro CC.
