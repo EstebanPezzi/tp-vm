@@ -5,7 +5,6 @@
 *.vmx
 
 # Archivos de compilación y depuración (Visual Studio / MSVC)
-*.exe
 *.pdb
 *.ilk
 *.obj
