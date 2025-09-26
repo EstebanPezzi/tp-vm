@@ -245,7 +245,7 @@ void vm_execute(VM *vm)
 
         uint16_t new_off = offset + instr_len;
         uint16_t code_size = vm->segment_table[0] >> 16;
-        if (new_off >= code_size)
+        if (new_off > code_size)
         {
             vm->memory[REG_IP] = 0xFFFF0000;
             break;
@@ -331,6 +331,20 @@ const char *get_register_name(uint8_t reg_code)
 {
     switch (reg_code)
     {
+    case REG_LAR:
+        return "LAR";
+    case REG_MAR:
+        return "MAR";
+    case REG_MBR:
+        return "MBR";
+    case REG_IP:
+        return "IP";
+    case REG_OPC:
+        return "OPC";
+    case REG_OP1:
+        return "OP1";
+    case REG_OP2:
+        return "OP2";
     case REG_EAX:
         return "EAX";
     case REG_EBX:
@@ -351,8 +365,6 @@ const char *get_register_name(uint8_t reg_code)
         return "CS";
     case REG_DS:
         return "DS";
-    case REG_IP:
-        return "IP";
     default:
         return "R?";
     }
@@ -378,6 +390,7 @@ void disassemble_operand(VM *vm, uint8_t type, uint32_t value)
         uint8_t reg_code = (value >> 16) & 0xFF;
         int16_t displacement = (int16_t)(value & 0xFFFF);
 
+        printf("[");
         if (reg_code != 0)
         {
             printf("%s", get_register_name(reg_code));
@@ -498,7 +511,7 @@ int main(int argc, char **argv)
     bool disassemble = false;
     const char *filename = NULL;
 
-    // 1. PRIMERO parsear argumentos
+    // 1. PRIMERO parsear argumentos 
     for (int i = 1; i < argc; i++)
     {
         if (strcmp(argv[i], "-d") == 0)
@@ -511,8 +524,7 @@ int main(int argc, char **argv)
         }
     }
 
-    // 2. Validar que se pasó un filename
-    if (!filename)
+    // 2. Validar que se pasó un filename if (!filename)
     {
         printf("Uso: vmx <archivo.vmx> [-d]\n");
         return 1;
@@ -771,6 +783,7 @@ void instr_DIV(VM *vm)
 
 void instr_CMP(VM *vm)
 {
+    printf("CMP\n");
     int32_t val1 = get_operand_value(vm, vm->registers[REG_OP1]);
     int32_t val2 = get_operand_value(vm, vm->registers[REG_OP2]);
 
@@ -937,7 +950,7 @@ void instr_SYS(VM *vm)
         for (int i = 0; i < cell_count; i++)
         {
             uint32_t current_addr = edx + (i * cell_size);
-            printf("[%04X]: ", current_addr);
+            printf("[%04X]: ", (uint16_t)current_addr);
 
             int32_t value = 0;
             int scan_result = 0;
@@ -997,40 +1010,44 @@ void instr_SYS(VM *vm)
             uint32_t current_addr = edx + (i * cell_size);
             uint32_t value = vm_memory_read(vm, current_addr, cell_size);
 
-            printf("[%04X]: ", current_addr);
+            printf("[%04X]: ", (uint16_t)current_addr);
 
-            // Mostrar según el formato especificado en EAX
-            if (eax & 0x01)
-            { // Decimal
-                printf("%d", value);
-            }
-            else if (eax & 0x02)
-            { // Carácter
-                if (value >= 32 && value <= 126)
-                {
-                    printf("%c", (char)value);
-                }
-                else
-                {
-                    printf(".");
-                }
-            }
-            else if (eax & 0x04)
-            { // Octal
-                printf("%o", value);
-            }
-            else if (eax & 0x08)
-            { // Hexadecimal
-                printf("%X", value);
-            }
-            else if (eax & 0x10)
+            // Mostrar según los bits activos en EAX
+
+            bool printed = false;
+
+            if (eax & 0x10)
             { // Binario
                 for (int bit = (cell_size * 8) - 1; bit >= 0; bit--)
-                {
-                    printf("%d", (value >> bit) & 1);
-                }
+                    printf("%d ", (value >> bit) & 1);
+                printf(" ");
+                printed = true;
             }
-            else
+            if (eax & 0x08)
+            { // Hexadecimal
+                printf("0x%X ", value);
+                printed = true;
+            }
+            if (eax & 0x04)
+            { // Octal
+                printf("0o%o ", value);
+                printed = true;
+            }
+            if (eax & 0x02)
+            { // Carácter
+                if (value >= 32 && value <= 126)
+                    printf("%c ", (char)value);
+                else
+                    printf(". ");
+                printed = true;
+            }
+            if (eax & 0x01)
+            { // Decimal
+                printf("%d ", value);
+                printed = true;
+            }
+
+            if (!printed)
             {
                 vm->running = false;
                 return;
@@ -1116,7 +1133,7 @@ void instr_NOT(VM *vm)
 {
     uint32_t val1 = get_operand_value(vm, vm->registers[REG_OP1]);
 
-    uint32_t result = ~val1; // Negación bit a bit
+    uint32_t result = ~val1;                               // Negación bit a bit
     set_operand_value(vm, vm->registers[REG_OP1], result); // Guardar el resultado
 
     update_flags(vm, result); // Actualiza el registro CC.
