@@ -261,6 +261,7 @@ void vm_execute(VM *vm)
         }
         else
         {
+            printf("Instruccion invalida");
             vm->running = false;
         }
     }
@@ -600,6 +601,7 @@ uint32_t translate_logical(VM *vm, uint32_t logical_addr, uint16_t num_bytes)
     if (seg >= SEGMENT_TABLE_SIZE)
     {
         vm->running = false;
+        printf("Fallo de segmento");
         return -1;
     }
 
@@ -608,6 +610,7 @@ uint32_t translate_logical(VM *vm, uint32_t logical_addr, uint16_t num_bytes)
     uint16_t seg_size = (entry >> 16) & 0xFFFF;
     if (offset + num_bytes > seg_size)
     {
+        printf("Fallo de segmento");
         vm->running = false;
         return -1;
     }
@@ -950,7 +953,7 @@ void instr_SYS(VM *vm)
         for (int i = 0; i < cell_count; i++)
         {
             uint32_t current_addr = edx + (i * cell_size);
-            printf("[%04X]: ", (uint16_t)current_addr);
+            printf("[%04X]: ",(uint16_t) current_addr);
 
             int32_t value = 0;
             int scan_result = 0;
@@ -1010,7 +1013,7 @@ void instr_SYS(VM *vm)
             uint32_t current_addr = edx + (i * cell_size);
             uint32_t value = vm_memory_read(vm, current_addr, cell_size);
 
-            printf("[%04X]: ", (uint16_t)current_addr);
+            printf("[%04X]: ", (uint16_t) current_addr);
 
             // Mostrar según los bits activos en EAX
 
