@@ -5,7 +5,7 @@
 #include <string.h>
 
 // Memoria principal: 16 KiB
-#define MEMORY_SIZE 16384
+#define DEFAULT_MEMORY_SIZE 16384
 
 // Tabla de descriptores de segmentos: 8 entradas de 4 bytes cada una
 #define SEGMENT_TABLE_SIZE 8
@@ -21,6 +21,8 @@
 #define REG_OPC 4
 #define REG_OP1 5
 #define REG_OP2 6
+#define REG_SP 7
+#define REG_BP 8
 #define REG_EAX 10
 #define REG_EBX 11
 #define REG_ECX 12
@@ -31,6 +33,10 @@
 #define REG_CC 17
 #define REG_CS 26
 #define REG_DS 27
+#define REG_ES 28
+#define REG_SS 29
+#define REG_KS 30
+#define REG_PS 31
 
 // Códigos de operaciones (opcodes)
 #define OPC_MOV 0x10
@@ -60,6 +66,11 @@
 #define OPC_NOT 0x08
 #define OPC_STOP 0x0F
 
+#define OPC_PUSH 0x0B
+#define OPC_POP 0x0C
+#define OPC_CALL 0x0D
+#define OPC_RET 0x0E
+
 // Tipos de operandos
 #define OP_TYPE_NONE 0b00
 #define OP_TYPE_REGISTER 0b01
@@ -73,15 +84,15 @@
 // Estructura para la VM
 typedef struct
 {
-    uint8_t memory[MEMORY_SIZE];
+    uint8_t *memory; // La memoria depende del valor ingresado por el que la ejecuta
     uint32_t segment_table[SEGMENT_TABLE_SIZE];
     int32_t registers[NUM_REGISTERS];
     bool running;
 } VM;
 
 // Funciones principales
-void vm_init(VM *vm);
-int vm_load_program(VM *vm, const char *filename);
+void vm_init(VM *vm, int memory_size);
+int vm_load_program(VM *vm, const char *filename, int memory_size, char **params, int params_count);
 void vm_execute(VM *vm);
 typedef void (*InstructionFunc)(VM *vm); // Para el vector punto a función
 
@@ -111,6 +122,11 @@ void instr_JNP(VM *vm);
 void instr_JNN(VM *vm);
 void instr_NOT(VM *vm);
 void instr_STOP(VM *vm);
+void instr_PUSH(VM *vm);
+void instr_POP(VM *vm);
+void instr_CALL(VM *vm);
+void instr_RET(VM *vm);
+
 void update_flags(VM *vm, int32_t result);
 uint32_t get_operand_value(VM *vm, uint32_t op_reg);
 void set_operand_value(VM *vm, uint32_t op_reg, uint32_t value);
@@ -123,16 +139,17 @@ uint32_t translate_logical(VM *vm, uint32_t logical_addr, uint16_t num_bytes);
 uint32_t vm_memory_read(VM *vm, uint32_t logical_addr, uint8_t num_bytes);
 uint32_t vm_memory_write(VM *vm, uint32_t logical_addr, uint8_t num_bytes, uint32_t value);
 
-void vm_init(VM *vm)
+void vm_init(VM *vm, int memory_size)
 {
-    memset(vm->memory, 0, MEMORY_SIZE);
+    vm->memory = (uint8_t *)malloc(memory_size);
+    memset(vm->memory, 0, memory_size);
     memset(vm->segment_table, 0, sizeof(vm->segment_table));
     memset(vm->registers, 0, sizeof(vm->registers));
     srand(time(NULL)); // semilla distinta cada vez que ejecuto el programa para funcion rand()
     vm->running = true;
 }
 
-int vm_load_program(VM *vm, const char *filename)
+int vm_load_program(VM *vm, const char *filename, int memory_size, char **params, int params_count)
 {
     FILE *file = fopen(filename, "rb");
     if (!file)
@@ -152,32 +169,191 @@ int vm_load_program(VM *vm, const char *filename)
     }
 
     uint8_t version;
-    fread(&version, 1, 1, file);
+    fread(&version, 1, 1, file); // 5
     printf("%d\n", version);
-    if (version != 1)
+    if (version == 1)
+        printf("vmx de la version 1 ejecutado");
+    else if (version == 2)
+        printf("vmx de la version 2 ejecutado");
+    else
     {
         fclose(file);
         return 0;
     }
 
-    uint8_t code_size_bytes[2];
-    fread(code_size_bytes, 1, 2, file);
-    uint16_t code_size = (code_size_bytes[0] << 8) | code_size_bytes[1]; // Big-endian: byte0=alto, byte1=bajo
-    printf("Code size %u\n", code_size); // Cambia %x a %u para decimal
+    if (version == 1)
+    {
+        uint8_t code_size_bytes[2];
+        fread(code_size_bytes, 1, 2, file);                                  // 6 - 7
+        uint16_t code_size = (code_size_bytes[0] << 8) | code_size_bytes[1]; // Big-endian: byte0=alto, byte1=bajo
+        printf("Code size %u\n", code_size);                                 // Cambia %x a %u para decimal
 
-    // Cargar el codigo en la memoria
-    fread(vm->memory, 1, code_size, file);
+        fread(vm->memory, 1, code_size, file);
+
+        vm->segment_table[0] = (code_size << 16) | 0;
+        vm->segment_table[1] = ((DEFAULT_MEMORY_SIZE - code_size) << 16) | code_size;
+        printf("tamanio data segment %d\n", DEFAULT_MEMORY_SIZE - code_size);
+
+        // Inicializar registros
+        vm->registers[REG_CS] = 0x00000000;            // Puntero al segmento de codigo
+        vm->registers[REG_DS] = 0x00010000;            // Puntero al segmento de datos
+        vm->registers[REG_IP] = vm->registers[REG_CS]; // IP apunta al inicio del code segment
+    }
+    else if (version == 2)
+    {
+        uint8_t code_size_bytes[2];
+        fread(code_size_bytes, 1, 2, file);                                          // 6 - 7
+        uint16_t code_segment_size = (code_size_bytes[0] << 8) | code_size_bytes[1]; // Big-endian: byte0=alto, byte1=bajo
+        printf("Code size %u\n", code_segment_size);                                 // Cambia %x a %u para decimal
+
+        uint8_t data_segment_bytes[2];
+        fread(data_segment_bytes, 1, 2, file); // 8 - 9
+        uint16_t data_segment_size = (data_segment_bytes[0] << 8) | data_segment_bytes[1];
+
+        uint8_t extra_segment_bytes[2];
+        fread(extra_segment_bytes, 1, 2, file); // 10 - 11
+        uint16_t extra_segment_size = (extra_segment_bytes[0] << 8) | extra_segment_bytes[1];
+
+        uint8_t stack_segment_bytes[2];
+        fread(stack_segment_bytes, 1, 2, file); // 12 - 13
+        uint16_t stack_segment_size = (stack_segment_bytes[0] << 8) | stack_segment_bytes[1];
+
+        uint8_t const_segment_bytes[2];
+        fread(const_segment_bytes, 1, 2, file); // 14 - 15
+        uint16_t const_segment_size = (const_segment_bytes[0] << 8) | const_segment_bytes[1];
+
+        uint8_t entry_point_offset_bytes[2];
+        fread(entry_point_offset_bytes, 1, 2, file);
+        uint16_t entry_point_offset = (entry_point_offset_bytes[0] << 8) | entry_point_offset_bytes[1];
+
+        if (data_segment_size == 0)
+            data_segment_size = 1024;
+        if (extra_segment_size == 0)
+            extra_segment_size = 1024;
+        if (stack_segment_size == 0)
+            stack_segment_size = 1024;
+
+        uint16_t param_segment_size = 0;
+        if (params_count > 0)
+        {
+            uint32_t strings_size = 0;
+            for (int i = 0; i < params_count; i++)
+            {
+                strings_size += strlen(params[i]) + 1;
+            }
+            uint32_t array_size = (params_count + 1) * 4; // argv[argc] = NULL
+            param_segment_size = array_size + strings_size;
+        }
+
+        // Calcular bases y construir tabla
+        uint32_t current_base = 0;
+        int table_index = 0;
+
+        // Param Segment
+        if (param_segment_size > 0)
+        {
+            vm->segment_table[table_index] = (param_segment_size << 16) | current_base;
+            uint32_t param_base = current_base;
+            current_base += param_segment_size;
+            vm->registers[REG_PS] = table_index << 16;
+            table_index++;
+
+            uint32_t offset = 0;
+            for (int i = 0; i < params_count; i++)
+            {
+                char *param = params[i];
+                int len = strlen(param) + 1;
+                uint32_t logical_addr = (table_index << 16) | offset;
+                for (int j = 0; j < len; j++)
+                    vm_memory_write(vm, logical_addr + j, 1, (uint8_t)param[j]);
+                offset += len;
+            }
+        }
+        else
+        {
+            vm->registers[REG_PS] = 0xFFFFFFFF;
+        }
+
+        // Const Segment
+        if (const_segment_size > 0)
+        {
+            vm->segment_table[table_index] = (const_segment_size << 16) | current_base;
+            current_base += const_segment_size;
+            vm->registers[REG_KS] = table_index << 16;
+            table_index++;
+        }
+
+        // Code Segment
+        if (code_segment_size > 0)
+        {
+            vm->segment_table[table_index] = (code_segment_size << 16) | current_base;
+            fread(vm->memory + current_base, 1, code_segment_size, file); // Cargar código
+            vm->registers[REG_CS] = table_index << 16;
+            vm->registers[REG_IP] = (table_index << 16) | entry_point_offset; // IP lógico
+            current_base += code_segment_size;
+            table_index++;
+        }
+
+        // Data Segment
+        if (data_segment_size > 0)
+        {
+            vm->segment_table[table_index] = (data_segment_size << 16) | current_base;
+            current_base += data_segment_size;
+            vm->registers[REG_DS] = table_index << 16;
+            table_index++;
+        }
+
+        // Extra Segment
+        if (extra_segment_size > 0)
+        {
+            vm->segment_table[table_index] = (extra_segment_size << 16) | current_base;
+            current_base += extra_segment_size;
+            vm->registers[REG_ES] = table_index << 16;
+            table_index++;
+        }
+
+        // Stack Segment
+        if (stack_segment_size > 0)
+        {
+            vm->segment_table[table_index] = (stack_segment_size << 16) | current_base;
+            current_base += stack_segment_size;
+            vm->registers[REG_SS] = table_index << 16;
+            vm->registers[REG_SP] = current_base; // SP inicial al final del stack
+            table_index++;
+        }
+
+        uint32_t total_size = current_base;
+        if (total_size > memory_size)
+        {
+            vm->running = 0;
+            return;
+        }
+
+        // Carga del Const segment si existe
+        if (const_segment_size > 0)
+        {
+            int const_segment_index = vm->registers[REG_KS] >> 16;
+            uint32_t const_base = vm->segment_table[const_segment_index] & 0xFFFF; // Base física del Const
+            fread(vm->memory + const_base, 1, const_segment_size, file);
+        }
+
+        // Configuracion de la pila para al subrutina principal
+        push_to_stack(vm, params_count);
+        push_to_stack(vm, vm->registers[REG_KS]);
+        push_to_stack(vm, -1); // RET subrutina principal
+
+        // Guardan datos iniciales que no son necesarios
+        vm->registers[REG_LAR] = 0x0;
+        vm->registers[REG_MAR] = 0x0;
+        vm->registers[REG_MBR] = 0x0;
+    }
+    else
+    {
+        fclose(file);
+        vm->running = false;
+        return 0;
+    }
     fclose(file);
-
-    vm->segment_table[0] = (code_size << 16) | 0;
-    vm->segment_table[1] = ((MEMORY_SIZE - code_size) << 16) | code_size;
-    printf("tamanio data segment %d\n", MEMORY_SIZE - code_size);
-
-    // Inicializar registros
-    vm->registers[REG_CS] = 0x00000000;            // Puntero al segmento de codigo
-    vm->registers[REG_DS] = 0x00010000;            // Puntero al segmento de datos
-    vm->registers[REG_IP] = vm->registers[REG_CS]; // IP apunta al inicio del code segment
-
     vm->running = true;
     return 1;
 }
@@ -190,17 +366,7 @@ void vm_execute(VM *vm)
         uint32_t ip = vm->registers[REG_IP];
         printf("\n[VM] IP = %08X\n", ip); // DEBUG
 
-        uint16_t seg = ip >> 16;
-        uint16_t offset = ip & 0xFFFF;
-        if (seg != 0)
-            break; // Fuera de codigo
-
-        uint16_t base = vm->segment_table[seg] & 0xFFFF;
-        uint16_t tam = vm->segment_table[seg] >> 16 & 0xFFFF;
-        if (offset >= tam)
-            break;
-
-        uint16_t phys = base + offset;
+        uint32_t phys = translate_logical(vm, ip, 1);
         // Leo el primer byte
         uint8_t first_byte = vm->memory[phys++];
         printf("[VM] First byte = %02X\n", first_byte);
@@ -220,36 +386,28 @@ void vm_execute(VM *vm)
         // Leo OP B
         uint16_t p = phys;
         uint32_t opb_bytes = 0x0;
-        uint32_t opb_bytes = 0x0;
         if (type_b > 0x0)
             opb_bytes |= vm->memory[p++];
         if (type_b > 0x1)
             opb_bytes = (opb_bytes << 8) | vm->memory[p++];
         if (type_b > 0x2)
             opb_bytes = (opb_bytes << 8) | vm->memory[p++];
-            opb_bytes = (opb_bytes << 8) | vm->memory[p++];
 
         // LEO OP A
         uint32_t opa_bytes = 0;
         if (type_a > 0)
             opa_bytes |= vm->memory[p++];
-        printf("\n%x\n", opa_bytes);
-        printf("\n%x\n", opa_bytes);
         if (type_a > 1)
-            opa_bytes <<= 8 | vm->memory[p++];
-        printf("\n%x\n", opa_bytes);
-        if (type_a > 2)
-            opa_bytes <<= 8 | vm->memory[p++];
-        printf("\n%x\n", opa_bytes);
             opa_bytes = (opa_bytes << 8) | vm->memory[p++];
-        printf("\n%x\n", opa_bytes);
+        if (type_a > 2)
+            opa_bytes = (opa_bytes << 8) | vm->memory[p++];
 
         printf("[VM] OP1 raw = %08X, OP2 raw = %08X\n", (type_a << 24) | opa_bytes, (type_b << 24) | opb_bytes);
 
         // Seteo OP1 y OP2
         if (op_code != 0x8 && op_code != 0X0 && op_code != OPC_JMP && op_code != OPC_JZ && op_code != OPC_JP && op_code != OPC_JN && op_code != OPC_JNZ && op_code != OPC_JNP && op_code != OPC_JNN) // Si no es NOT o SYS
-        {   
-            //2 operandos.
+        {
+            // 2 operandos.
             vm->registers[REG_OP1] = (type_a << 24) | opa_bytes;
             vm->registers[REG_OP2] = (type_b << 24) | opb_bytes;
             vm->registers[REG_OPC] = op_code;
@@ -260,8 +418,9 @@ void vm_execute(VM *vm)
             vm->registers[REG_OPC] = op_code;
         }
 
-        uint16_t new_off = offset + instr_len;
-        uint16_t code_size = vm->segment_table[0] >> 16;
+        uint16_t current_offset = ip & 0xFFFF;
+        uint16_t new_off = current_offset + instr_len;
+        uint16_t code_size = vm->segment_table[ip >> 16] >> 16;
         if (new_off >= code_size)
         {
             vm->memory[REG_IP] = 0xFFFF0000;
@@ -469,8 +628,8 @@ void vm_disassemble(VM *vm)
     printf("===========================\n\n");
 
     // CORREGIR: Base en HIGH bits, Tamaño en LOW bits
-    uint16_t base_phys = vm->segment_table[0] & 0xFFFF;    // Base física
-    uint16_t code_size = vm->segment_table[0] >> 16; // Tamaño del código
+    uint16_t base_phys = vm->segment_table[0] & 0xFFFF; // Base física
+    uint16_t code_size = vm->segment_table[0] >> 16;    // Tamaño del código
 
     uint32_t ip = 0;
 
@@ -515,34 +674,68 @@ void vm_disassemble(VM *vm)
 
 int main(int argc, char **argv)
 {
+    VM vm;
+    init_instruction_table();
+
     bool disassemble = false;
-    const char *filename = NULL;
+    const char *vmx_filename = NULL;
+    const char *vmi_filename = NULL;
 
     // 1. PRIMERO parsear argumentos
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-d") == 0) {
+    bool vmi = false;
+    int memory_size = 0;
+    int param_segment_size = 0;
+    char **params = NULL;
+    int params_count = 0;
+    for (int i = 1; i < argc; i++)
+    {
+        // -d
+        if (!strcmp(argv[i], "-d"))
+        {
             disassemble = true;
-        } else {
-            filename = argv[i];
+        }
+        // filename
+        if (!strstr(argv[i], ".vmx") || !strstr(argv[i], ".VMX"))
+        {
+            vmx_filename = argv[i];
+        }
+        if (!strstr(argv[i], ".vmi") || !strstr(argv[i], ".VMI"))
+        {
+            vmi_filename = argv[i];
+            vmi = true;
+        }
+        if (!strcmp(argv[i], "m"))
+        {
+            char *memory_size_str = argv[i] + 2;
+            memory_size = atoi(memory_size_str);
+        }
+        if (vmi && !strcmp(argv[i], "-p"))
+        {
+            params_count = argc - (i + 1);
+            if (params_count > 0)
+                params = &argv[i + 1];
+            break; // Los argumentos es lo ultimo que se carga
         }
     }
 
-    // 2. Validar que se pasó un filename
-    if (!filename) {
+    if (memory_size == 0)
+        memory_size = DEFAULT_MEMORY_SIZE;
+
+    // 2. Validar que se pasó un vmx_filename
+    if (!vmx_filename)
+    {
         printf("Uso: vmx <archivo.vmx> [-d]\n");
         return 1;
     }
 
-    printf("Archivo: %s, Disassemble: %s\n", filename, disassemble ? "ON" : "OFF");
+    printf("Archivo: %s, Disassemble: %s\n", vmx_filename, disassemble ? "ON" : "OFF");
 
-    VM vm;
-    init_instruction_table();
-    vm_init(&vm);
+    vm_init(&vm, memory_size);
 
     // 3. Cargar el programa SOLO si necesitamos ejecutarlo
-    if (vm_load_program(&vm, filename) <= 0)
+    if (vm_load_program(&vm, vmx_filename, memory_size, params, params_count) <= 0)
     {
-        printf("Error: no se pudo cargar el archivo '%s'\n", filename);
+        printf("Error: no se pudo cargar el archivo '%s'\n", vmx_filename);
         return 1;
     }
 
@@ -550,7 +743,7 @@ int main(int argc, char **argv)
     if (disassemble)
     {
         vm_disassemble(&vm);
-        return 0; // ← IMPORTANTE: salir después de desensamblar
+        return 0; // IMPORTANTE: salir después de desensamblar
     }
 
     // 5. Si no, ejecutar normalmente
@@ -602,6 +795,10 @@ void init_instruction_table()
     instruction_table[OPC_JNN] = instr_JNN;
     instruction_table[OPC_NOT] = instr_NOT;
     instruction_table[OPC_STOP] = instr_STOP;
+    instruction_table[OPC_PUSH] = instr_PUSH;
+    instruction_table[OPC_POP] = instr_POP;
+    instruction_table[OPC_CALL] = instr_CALL;
+    instruction_table[OPC_RET] = instr_RET;
 }
 
 uint32_t translate_logical(VM *vm, uint32_t logical_addr, uint16_t num_bytes)
@@ -642,7 +839,7 @@ uint32_t vm_memory_read(VM *vm, uint32_t logical_addr, uint8_t num_bytes)
     for (uint8_t i = 0; i < num_bytes; i++)
     {
         uint8_t byte = vm->memory[phys + i];
-        value |= ((uint32_t)byte << (i * 8));
+        value = (value << 8) | byte;
     }
     vm->registers[REG_MBR] = value;
 
@@ -661,7 +858,10 @@ uint32_t vm_memory_write(VM *vm, uint32_t logical_addr, uint8_t num_bytes, uint3
     vm->registers[REG_MBR] = value;            // MBR valor a escribir
 
     for (uint8_t i = 0; i < num_bytes; i++)
-        vm->memory[phys + i] = (value >> (i * 8) & 0xFF);
+    {
+        uint8_t shift = (num_bytes - 1 - i) * 8;
+        vm->memory[phys + i] = (uint8_t)((value >> shift) & 0xFF);
+    }
     return true;
 }
 
@@ -670,7 +870,20 @@ uint32_t get_operand_value(VM *vm, uint32_t op_reg)
     uint8_t type = (op_reg >> 24) & 0xFF;
     uint32_t value = op_reg & 0x00FFFFFF;
     if (type == OP_TYPE_REGISTER)
-        return vm->registers[value];
+    {
+        uint32_t reg_value;
+        uint8_t reg_sec = value >> 6 & 0x03;
+        uint32_t reg_value = vm->registers[value & 0x1F];
+        if (reg_sec == 0b00) // registro de 4 bytes (EAX)
+            return reg_value;
+        else if (reg_sec == 0b01) // registro de 1 byte (4to byte del registro) (AL)
+            return reg_value & 0xFF;
+        else if (reg_sec == 0b10) // registro de 2 bytes (AH)
+            return (reg_value >> 8) & 0xFF;
+        else if (reg_sec == 0b11) // registro de 2 bytes (AX) segundo byte menos significativo de EAX
+            return reg_value & 0xFFFF;
+        return reg_value;
+    }
     else if (type == OP_TYPE_IMMEDIATE)
     {
         int32_t value2 = op_reg << 16; // Arrastro el signo
@@ -678,6 +891,15 @@ uint32_t get_operand_value(VM *vm, uint32_t op_reg)
     }
     else if (type == OP_TYPE_MEMORY)
     {
+        uint8_t cell_size = (value >> 22) & 0x03;
+        int bytes;
+        if (cell_size == 0b00) // 4 bytes
+            bytes = 4;
+        else if (cell_size == 0b10) // 2 bytes
+            bytes = 2;
+        else if (cell_size == 0b11) // 1 bytes
+            bytes = 1;
+
         uint8_t base_reg_code = (value >> 16) & 0xFF;
         int16_t disp = (int16_t)(value & 0xFFFF);
         uint32_t base_ptr = vm->registers[base_reg_code];
@@ -690,7 +912,7 @@ uint32_t get_operand_value(VM *vm, uint32_t op_reg)
             return 0;
         }
         uint32_t logical_addr = (base_seg << 16) | (logical_off & 0xFFFF);
-        return vm_memory_read(vm, logical_addr, 4); // Por defecto 4 bytes
+        return vm_memory_read(vm, logical_addr, bytes); // Por defecto 4 bytes
     }
     return 0; // Error
 }
@@ -699,11 +921,39 @@ void set_operand_value(VM *vm, uint32_t op_reg, uint32_t value)
 {
     uint8_t type = (op_reg >> 24) & 0xFF;
     uint32_t value_field = op_reg & 0x00FFFFFF;
-    printf("\n %x \n", type);
     if (type == OP_TYPE_REGISTER)
-        vm->registers[value_field] = value;
+    {
+        uint8_t reg_sec = value_field >> 6 & 0x03;
+        uint32_t reg_value = vm->registers[value_field & 0x1F];
+        if (reg_sec == 0b00)
+            reg_value = value;
+        else if (reg_sec == 0b01)
+        {                            // registro de 1 byte (4to byte del registro) (AL)
+            reg_value &= 0xFFFFFF00; // Limpio el byte menos significativo
+            reg_value |= (value & 0xFF);
+        }
+        else if (reg_sec == 0b10)
+        {                            // registro de 2 bytes (AH)
+            reg_value &= 0xFFFF00FF; // Limpio el segundo byte menos significativo
+            reg_value |= ((value & 0xFF) << 8);
+        }
+        else if (reg_sec == 0b11)
+        {                            // registro de 2 bytes (AX) segundo byte menos significativo de EAX
+            reg_value &= 0xFFFF0000; // Limpio los dos bytes menos significativos
+            reg_value |= (value & 0xFFFF);
+        }
+        vm->registers[value_field & 0x1F] = reg_value;
+    }
     else if (type == OP_TYPE_MEMORY)
     {
+        uint8_t cell_size = (value_field >> 22) & 0x03;
+        int bytes;
+        if (cell_size == 0b00) // 4 bytes
+            bytes = 4;
+        else if (cell_size == 0b10) // 2 bytes
+            bytes = 2;
+        else if (cell_size == 0b11) // 1 bytes
+            bytes = 1;
         uint8_t base_reg_code = (value_field >> 16) & 0xFF;
         int16_t disp = (int16_t)(value_field & 0xFFFF);
         uint32_t base_ptr = vm->registers[base_reg_code]; // Por ej, DS
@@ -716,7 +966,7 @@ void set_operand_value(VM *vm, uint32_t op_reg, uint32_t value)
             return;
         }
         uint32_t logical_addr = (base_seg << 16) | (logical_off & 0xFFFF);
-        vm_memory_write(vm, logical_addr, 4, value); // Por defecto 4 bytes
+        vm_memory_write(vm, logical_addr, bytes, value); // Por defecto 4 bytes
     }
 }
 
@@ -729,6 +979,45 @@ void update_flags(VM *vm, int32_t result)
     cc |= (result & 0x80000000) ? 0x80000000 : 0; // Bit 31 = N (signo)
     cc |= (result == 0) ? 0x40000000 : 0;         // Bit 30 = Z (cero)
     vm->registers[REG_CC] = cc;
+}
+
+// PUSH: Decrementa SP y almacena valor (big-endian)
+void push_to_stack(VM *vm, uint32_t value)
+{
+    vm->registers[REG_SP] -= 4;
+
+    // Calcular dirección lógica: (REG_SS << 16) | REG_SP
+    uint32_t logical_addr = (vm->registers[REG_SS] & 0xFFFF0000) | (vm->registers[REG_SP] & 0xFFFF);
+
+    // Verificar y obtener dirección física
+    uint32_t phys_addr = translate_logical(vm, logical_addr, 4);
+    if (phys_addr == (uint32_t)-1)
+        return;
+
+    vm_memory_write(vm, logical_addr, 4, value);
+}
+
+uint32_t pop_from_stack(VM *vm)
+{
+    uint32_t logical_addr = (vm->registers[REG_SS] & 0xFFFF0000) | (vm->registers[REG_SP] & 0xFFFF);
+
+    uint32_t phys_addr = translate_logical(vm, logical_addr, 4);
+    if (phys_addr == (uint32_t)-1)
+        return -1;
+
+    uint32_t value = vm_memory_read(vm, logical_addr, 4);
+
+    vm->registers[REG_SP] += 4;
+
+    logical_addr = (vm->registers[REG_SS] & 0xFFFF0000) | (vm->registers[REG_SP] & 0xFFFF);
+    if (translate_logical(vm, logical_addr, 0) == (uint32_t)-1)
+    {
+        printf("STACK UNDERFLOW after POP\n");
+        vm->running = 0;
+        return -1;
+    }
+
+    return value;
 }
 
 // Se debe modularizar más ¿?
@@ -769,7 +1058,7 @@ void instr_MUL(VM *vm)
     int32_t val2 = get_operand_value(vm, vm->registers[REG_OP2]);
 
     int64_t result = (int64_t)val1 * (int64_t)val2; // para detectar overflow
-    int32_t truncated = (int32_t)result;            
+    int32_t truncated = (int32_t)result;
     set_operand_value(vm, vm->registers[REG_OP1], result);
 
     update_flags(vm, truncated); // Actualiza el registro CC.
@@ -940,6 +1229,41 @@ void instr_RND(VM *vm)
     set_operand_value(vm, vm->registers[REG_OP1], rnd);
 }
 
+void instr_PUSH(VM *vm)
+{
+    uint32_t value = get_operand_value(vm, vm->registers[REG_OP1]); // OP1 contiene dirección lógica del operando
+    push_to_stack(vm, value);
+}
+
+void instr_POP(VM *vm)
+{
+    uint32_t value = pop_from_stack(vm);
+    set_operand_value(vm, vm->registers[REG_OP1], value);
+}
+
+void instr_CALL(VM *vm)
+{
+    // Calcular siguiente IP (IP actual + tamaño de instrucción)
+    uint32_t current_ip = vm->registers[REG_IP];
+    uint16_t instruction_size = 5; // CALL tiene OP1 (1 byte opcode + 4 bytes operando típico)
+    uint32_t next_ip = current_ip + instruction_size;
+
+    push_to_stack(vm, next_ip);
+
+    // Saltar a la dirección del OP1
+    uint32_t target_address = get_operand_value(vm, vm->registers[REG_OP1]);
+    vm->registers[REG_IP] = target_address;
+}
+
+void instr_RET(VM *vm)
+{
+    // POP del IP de retorno
+    uint32_t return_ip = pop_from_stack(vm);
+
+    // Saltar a esa dirección
+    vm->registers[REG_IP] = return_ip;
+}
+
 // Revisar
 void instr_SYS(VM *vm)
 {
@@ -1073,6 +1397,10 @@ void instr_SYS(VM *vm)
             printf("\n");
         }
     }
+    if (sys_call == 3)
+    {
+        printf("Hacer el sys call 3");
+    }
     else
     {
         printf("ERROR: Llamada al sistema inválida %u\n", sys_call);
@@ -1092,17 +1420,17 @@ void instr_JZ(VM *vm)
 {
 
     if (vm->registers[REG_CC] & 0x40000000) // Z=1
-    { // IF Z==1
+    {                                       // IF Z==1
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
     }
 }
 
 void instr_JP(VM *vm)
-{ 
+{
 
     if (!(vm->registers[REG_CC] & 0x40000000) && !(vm->registers[REG_CC] & 0x80000000))
-    { 
+    {
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
     }
@@ -1111,7 +1439,7 @@ void instr_JP(VM *vm)
 void instr_JN(VM *vm)
 {
 
-    if (vm->registers[REG_CC] & 0x80000000) //N =1
+    if (vm->registers[REG_CC] & 0x80000000) // N =1
     {
         int32_t direc = get_operand_value(vm, vm->registers[REG_OP1]);
         vm->registers[REG_IP] = direc;
