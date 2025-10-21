@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Memoria principal: 16 KiB
+// Memoria por default: 16 KiB
 #define DEFAULT_MEMORY_SIZE 16384
 
 // Tabla de descriptores de segmentos: 8 entradas de 4 bytes cada una
@@ -13,7 +13,6 @@
 // Registros: 32 de 4 bytes
 #define NUM_REGISTERS 32
 
-// Códigos de registros PARTE 1
 #define REG_LAR 0
 #define REG_MAR 1
 #define REG_MBR 2
@@ -76,10 +75,6 @@
 #define OP_TYPE_REGISTER 0b01
 #define OP_TYPE_IMMEDIATE 0b10
 #define OP_TYPE_MEMORY 0b11
-#define OP_TYPE_NONE 0b00
-#define OP_TYPE_REGISTER 0b01
-#define OP_TYPE_IMMEDIATE 0b10
-#define OP_TYPE_MEMORY 0b11
 
 // Estructura para la VM
 typedef struct
@@ -138,6 +133,8 @@ void init_instruction_table();
 uint32_t translate_logical(VM *vm, uint32_t logical_addr, uint16_t num_bytes);
 uint32_t vm_memory_read(VM *vm, uint32_t logical_addr, uint8_t num_bytes);
 uint32_t vm_memory_write(VM *vm, uint32_t logical_addr, uint8_t num_bytes, uint32_t value);
+void push_to_stack(VM *vm, uint32_t value);
+uint32_t pop_from_stack(VM *vm);
 
 void vm_init(VM *vm, int memory_size)
 {
@@ -270,9 +267,8 @@ int vm_load_program(VM *vm, const char *filename, int memory_size, char **params
             }
         }
         else
-        {
-            vm->registers[REG_PS] = 0xFFFFFFFF;
-        }
+            vm->registers[REG_PS] = 0xFFFFFFFF; // -1
+
 
         // Const Segment
         if (const_segment_size > 0)
@@ -281,7 +277,9 @@ int vm_load_program(VM *vm, const char *filename, int memory_size, char **params
             current_base += const_segment_size;
             vm->registers[REG_KS] = table_index << 16;
             table_index++;
-        }
+        } else
+            vm->registers[REG_KS] = 0xFFFFFFFF; // -1
+
 
         // Code Segment
         if (code_segment_size > 0)
@@ -301,7 +299,9 @@ int vm_load_program(VM *vm, const char *filename, int memory_size, char **params
             current_base += data_segment_size;
             vm->registers[REG_DS] = table_index << 16;
             table_index++;
-        }
+        } else
+            vm->registers[REG_DS] = 0xFFFFFFFF; // -1
+
 
         // Extra Segment
         if (extra_segment_size > 0)
@@ -310,7 +310,8 @@ int vm_load_program(VM *vm, const char *filename, int memory_size, char **params
             current_base += extra_segment_size;
             vm->registers[REG_ES] = table_index << 16;
             table_index++;
-        }
+        } else 
+            vm->registers[REG_ES] = 0xFFFFFFFF; // -1
 
         // Stack Segment
         if (stack_segment_size > 0)
@@ -326,7 +327,7 @@ int vm_load_program(VM *vm, const char *filename, int memory_size, char **params
         if (total_size > memory_size)
         {
             vm->running = 0;
-            return;
+            return -1;
         }
 
         // Carga del Const segment si existe
@@ -338,8 +339,8 @@ int vm_load_program(VM *vm, const char *filename, int memory_size, char **params
         }
 
         // Configuracion de la pila para al subrutina principal
+        push_to_stack(vm, vm->registers[REG_PS]);
         push_to_stack(vm, params_count);
-        push_to_stack(vm, vm->registers[REG_KS]);
         push_to_stack(vm, -1); // RET subrutina principal
 
         // Guardan datos iniciales que no son necesarios
@@ -672,6 +673,7 @@ void vm_disassemble(VM *vm)
     }
 }
 
+
 int main(int argc, char **argv)
 {
     VM vm;
@@ -693,21 +695,25 @@ int main(int argc, char **argv)
         if (!strcmp(argv[i], "-d"))
         {
             disassemble = true;
+            continue;
         }
         // filename
-        if (!strstr(argv[i], ".vmx") || !strstr(argv[i], ".VMX"))
+        if ((strstr(argv[i], ".vmx") != NULL) || (strstr(argv[i], ".VMX") != NULL))
         {
             vmx_filename = argv[i];
+            continue;
         }
-        if (!strstr(argv[i], ".vmi") || !strstr(argv[i], ".VMI"))
+        if (strstr(argv[i], ".vmi") != NULL || strstr(argv[i], ".VMI") != NULL)
         {
             vmi_filename = argv[i];
             vmi = true;
+            continue;
         }
-        if (!strcmp(argv[i], "m"))
+        if (strstr(argv[i], "m=") != NULL)
         {
             char *memory_size_str = argv[i] + 2;
             memory_size = atoi(memory_size_str);
+            continue;
         }
         if (vmi && !strcmp(argv[i], "-p"))
         {
@@ -720,6 +726,8 @@ int main(int argc, char **argv)
 
     if (memory_size == 0)
         memory_size = DEFAULT_MEMORY_SIZE;
+    
+    printf("Memory size: %d bytes\n", memory_size);
 
     // 2. Validar que se pasó un vmx_filename
     if (!vmx_filename)
@@ -873,7 +881,7 @@ uint32_t get_operand_value(VM *vm, uint32_t op_reg)
     {
         uint32_t reg_value;
         uint8_t reg_sec = value >> 6 & 0x03;
-        uint32_t reg_value = vm->registers[value & 0x1F];
+        reg_value = vm->registers[value & 0x1F];
         if (reg_sec == 0b00) // registro de 4 bytes (EAX)
             return reg_value;
         else if (reg_sec == 0b01) // registro de 1 byte (4to byte del registro) (AL)
@@ -956,7 +964,7 @@ void set_operand_value(VM *vm, uint32_t op_reg, uint32_t value)
             bytes = 1;
         uint8_t base_reg_code = (value_field >> 16) & 0xFF;
         int16_t disp = (int16_t)(value_field & 0xFFFF);
-        uint32_t base_ptr = vm->registers[base_reg_code]; // Por ej, DS
+        uint32_t base_ptr = vm->registers[base_reg_code];
         uint16_t base_seg = base_ptr >> 16;
         uint16_t base_off = base_ptr & 0xFFFF;
         int32_t logical_off = (int32_t)base_off + disp;
@@ -1241,7 +1249,7 @@ void instr_POP(VM *vm)
     set_operand_value(vm, vm->registers[REG_OP1], value);
 }
 
-void instr_CALL(VM *vm)
+void instr_CALL(VM *vm) // Revisar
 {
     // Calcular siguiente IP (IP actual + tamaño de instrucción)
     uint32_t current_ip = vm->registers[REG_IP];
