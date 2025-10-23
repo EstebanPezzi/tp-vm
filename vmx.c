@@ -180,6 +180,9 @@ int vm_load_program(VM *vm, const char *filename, int memory_size, char **params
     uint8_t version;
     fread(&version, 1, 1, file); // 5
     printf("%d\n", version);
+    
+    version = 2; // FORZAR VERSION 2 PARA DEBUG
+    
     if (version == 1)
         printf("vmx de la version 1 ejecutado");
     else if (version == 2)
@@ -256,27 +259,104 @@ int vm_load_program(VM *vm, const char *filename, int memory_size, char **params
         int table_index = 0;
 
         // Param Segment
-        if (param_segment_size > 0) // 
-        {
-            vm->segment_table[table_index] = (param_segment_size << 16) | current_base;
-            uint32_t param_base = current_base;
-            current_base += param_segment_size;
-            vm->registers[REG_PS] = table_index << 16;
-            table_index++;
+        // EN vm_load_program (versión 2) - REEMPLAZAR la sección del Param Segment:
 
-            uint32_t offset = 0;
-            for (int i = 0; i < params_count; i++)
-            {
-                char *param = params[i];
-                int len = strlen(param) + 1;
-                uint32_t logical_addr = (table_index << 16) | offset;
-                for (int j = 0; j < len; j++)
-                    vm_memory_write(vm, logical_addr + j, 1, (uint8_t)param[j]);
-                offset += len;
-            }
+printf("=== DEBUG: INICIANDO CARGA DE PARAMETROS ===\n");
+printf("Cantidad de parametros: %d\n", params_count);
+for (int i = 0; i < params_count; i++) {
+    printf("Parametro %d: '%s' (longitud: %zu)\n", i, params[i], strlen(params[i]));
+}
+
+if (params_count > 0)
+{
+    // Calcular tamaño de strings
+    uint32_t strings_size = 0;
+    for (int i = 0; i < params_count; i++) {
+        strings_size += strlen(params[i]) + 1;
+    }
+    uint32_t argv_size = params_count * 4;  
+    param_segment_size = strings_size + argv_size;
+
+    // Configurar segmento
+    vm->segment_table[table_index] = (param_segment_size << 16) | current_base;
+    current_base += param_segment_size;
+    vm->registers[REG_PS] = table_index << 16;
+    uint32_t segment_index = table_index;
+    table_index++;
+
+    uint32_t current_string_offset = 0;
+    
+    // PRIMERA PASADA: Solo escribir strings
+    for (int i = 0; i < params_count; i++)
+    {
+        char *param = params[i];
+        int len = strlen(param) + 1;
+        
+        for (int j = 0; j < len; j++)
+        {
+            uint32_t logical_addr = (segment_index << 16) | current_string_offset;
+            vm_memory_write(vm, logical_addr, 1, (uint8_t)param[j]);
+            current_string_offset++;
         }
-        else
-            vm->registers[REG_PS] = 0xFFFFFFFF; // -1
+    }
+
+    // SEGUNDA PASADA: Escribir argv calculando offsets sobre la marcha
+    uint32_t argv_start_offset = strings_size;
+    printf("DEBUG: Construyendo arreglo argv:\n");
+uint32_t string_offset = 0;
+
+for (int i = 0; i < params_count; i++)
+{
+    uint32_t logical_addr = (segment_index << 16) | (argv_start_offset + i*4);
+    
+    printf("  argv[%d] en offset %u = %u (string: '%s')\n", 
+           i, argv_start_offset + i*4, string_offset, params[i]);
+    
+    vm_memory_write(vm, logical_addr, 4, string_offset);
+    string_offset += strlen(params[i]) + 1;
+}
+    
+
+        // === AGREGAR ESTO AL FINAL del if (params_count > 0) === //
+    printf("=== DEBUG: Param Segment construido ===\n");
+    printf("Tamaño total del Param Segment: %u bytes\n", param_segment_size);
+    printf("Registro PS: 0x%08X\n", vm->registers[REG_PS]);
+    
+    // Mostrar contenido en hexadecimal
+    uint32_t seg_index = vm->registers[REG_PS] >> 16;
+    uint32_t base_fisica = vm->segment_table[seg_index] & 0xFFFF;
+    
+    printf("Contenido hexadecimal (primeros 50 bytes):\n");
+    for (int i = 0; i < 50 && i < param_segment_size; i++) {
+        if (i % 16 == 0) printf("[%04X] ", i);
+        printf("%02X ", vm->memory[base_fisica + i]);
+        if (i % 16 == 15) printf("\n");
+    }
+    printf("\n");
+    
+    // Mostrar como strings
+    printf("Strings reconocidos:\n");
+    uint32_t offset = 0;
+    while (offset < param_segment_size) {
+        uint8_t ch = vm->memory[base_fisica + offset];
+        if (ch == 0) {
+            printf("\\0 ");
+            offset++;
+            continue;
+        }
+        if (ch >= 32 && ch <= 126) {
+            printf("%c ", ch);
+        } else {
+            printf(". ");
+        }
+        offset++;
+    }
+    printf("\n");
+}
+else
+{
+    vm->registers[REG_PS] = 0xFFFFFFFF; // -1 si no hay parámetros
+}
 
         // Const Segment
         if (const_segment_size > 0)
@@ -293,6 +373,7 @@ int vm_load_program(VM *vm, const char *filename, int memory_size, char **params
         if (code_segment_size > 0)
         {
             vm->segment_table[table_index] = (code_segment_size << 16) | current_base;
+                printf("DEBUG: Code Segment en física 0x%04X\n", current_base);
             fread(vm->memory + current_base, 1, code_segment_size, file); // Cargar código
             vm->registers[REG_CS] = table_index << 16;
             vm->registers[REG_IP] = (table_index << 16) | entry_point_offset; // IP lógico
@@ -720,9 +801,20 @@ void vm_disassemble(VM *vm)
     printf("Disassembling code segment:\n");
     printf("===========================\n\n");
 
-    // CORREGIR: Base en HIGH bits, Tamaño en LOW bits
-    uint16_t base_phys = vm->segment_table[0] & 0xFFFF; // Base física
-    uint16_t code_size = vm->segment_table[0] >> 16;    // Tamaño del código
+    uint32_t cs_value = vm->registers[REG_CS];
+    uint16_t cs_segment_index = (cs_value >> 16) & 0xFFFF;
+
+    if (cs_segment_index >= SEGMENT_TABLE_SIZE || vm->segment_table[cs_segment_index] == 0) {
+    printf("Error: Code Segment no válido\n");
+    return;
+    }
+
+    uint32_t code_entry = vm->segment_table[cs_segment_index];
+    uint16_t base_phys = code_entry & 0xFFFF;    // Base física del Code Segment
+    uint16_t code_size = code_entry >> 16;       // Tamaño del Code Segment
+
+printf("DEBUG: Disassembling Code Segment %d (físico: 0x%04X, tamaño: %u)\n", 
+       cs_segment_index, base_phys, code_size);
 
     uint32_t ip = 0;
 
@@ -771,7 +863,7 @@ int main(int argc, char **argv)
     init_instruction_table();
 
     bool disassemble = false;
-    const char *vmx_filename = NULL;
+    const char *vmx_filename = "test.vmx";
     const char vmi_filename[] = "debug.vmi";
 
     // 1. PRIMERO parsear argumentos
@@ -831,7 +923,7 @@ int main(int argc, char **argv)
 
     vm_init(&vm, memory_size);
 
-    char hardcoded_filename[] = "test2.vmx"; // Para debug
+    char hardcoded_filename[] = "test.vmx"; // Para debug
 
     disassemble = true; // Para debug
 
