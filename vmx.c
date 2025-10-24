@@ -261,12 +261,6 @@ int vm_load_program(VM *vm, const char *filename, int memory_size, char **params
         // Param Segment
         // EN vm_load_program (versión 2) - REEMPLAZAR la sección del Param Segment:
 
-printf("=== DEBUG: INICIANDO CARGA DE PARAMETROS ===\n");
-printf("Cantidad de parametros: %d\n", params_count);
-for (int i = 0; i < params_count; i++) {
-    printf("Parametro %d: '%s' (longitud: %zu)\n", i, params[i], strlen(params[i]));
-}
-
 if (params_count > 0)
 {
     // Calcular tamaño de strings
@@ -302,56 +296,20 @@ if (params_count > 0)
 
     // SEGUNDA PASADA: Escribir argv calculando offsets sobre la marcha
     uint32_t argv_start_offset = strings_size;
-    printf("DEBUG: Construyendo arreglo argv:\n");
+
 uint32_t string_offset = 0;
 
 for (int i = 0; i < params_count; i++)
 {
     uint32_t logical_addr = (segment_index << 16) | (argv_start_offset + i*4);
     
-    printf("  argv[%d] en offset %u = %u (string: '%s')\n", 
-           i, argv_start_offset + i*4, string_offset, params[i]);
-    
     vm_memory_write(vm, logical_addr, 4, string_offset);
     string_offset += strlen(params[i]) + 1;
 }
     
-
-        // === AGREGAR ESTO AL FINAL del if (params_count > 0) === //
-    printf("=== DEBUG: Param Segment construido ===\n");
-    printf("Tamaño total del Param Segment: %u bytes\n", param_segment_size);
-    printf("Registro PS: 0x%08X\n", vm->registers[REG_PS]);
-    
     // Mostrar contenido en hexadecimal
     uint32_t seg_index = vm->registers[REG_PS] >> 16;
     uint32_t base_fisica = vm->segment_table[seg_index] & 0xFFFF;
-    
-    printf("Contenido hexadecimal (primeros 50 bytes):\n");
-    for (int i = 0; i < 50 && i < param_segment_size; i++) {
-        if (i % 16 == 0) printf("[%04X] ", i);
-        printf("%02X ", vm->memory[base_fisica + i]);
-        if (i % 16 == 15) printf("\n");
-    }
-    printf("\n");
-    
-    // Mostrar como strings
-    printf("Strings reconocidos:\n");
-    uint32_t offset = 0;
-    while (offset < param_segment_size) {
-        uint8_t ch = vm->memory[base_fisica + offset];
-        if (ch == 0) {
-            printf("\\0 ");
-            offset++;
-            continue;
-        }
-        if (ch >= 32 && ch <= 126) {
-            printf("%c ", ch);
-        } else {
-            printf(". ");
-        }
-        offset++;
-    }
-    printf("\n");
 }
 else
 {
@@ -429,10 +387,26 @@ else
             fread(vm->memory + const_base, 1, const_segment_size, file);
         }
 
-        // Configuracion de la pila para al subrutina principal
-        push_to_stack(vm, vm->registers[REG_PS]);
-        push_to_stack(vm, params_count);
-        push_to_stack(vm, -1); // RET subrutina principal
+        if (params_count > 0) {
+        // Calcular el offset donde empieza el arreglo argv
+        uint32_t strings_size = 0;
+        for (int i = 0; i < params_count; i++) {
+            strings_size += strlen(params[i]) + 1;
+        }
+        uint32_t argv_offset = strings_size;  // argv empieza después de los strings
+        push_to_stack(vm, argv_offset);       // *argv = offset en Param Segment (SP+8)
+}       else {
+        push_to_stack(vm, 0xFFFFFFFF);        // *argv = -1 si no hay parámetros (SP+8)
+}
+
+push_to_stack(vm, params_count);          // argc (SP+4)
+push_to_stack(vm, 0xFFFFFFFF);            // RET (-1) (SP)
+
+uint32_t sp_val = vm->registers[REG_SP];
+for (int i = 0; i < 3; i++) {
+    uint32_t addr = sp_val + (i * 4);
+    uint32_t value = vm_memory_read(vm, addr, 4);
+}
 
         // Guardan datos iniciales que no son necesarios
         vm->registers[REG_LAR] = 0x0;
@@ -1267,8 +1241,31 @@ uint32_t pop_from_stack(VM *vm)
 
 // Se debe modularizar más ¿?
 
+// En instr_MOV, agrega DEBUG específico para [BP+12] y [EBX]
 void instr_MOV(VM *vm)
 {
+    // DEBUG: Si es MOV EBX, [BP+12] o MOV EDX, [EBX]
+    uint32_t op1 = vm->registers[REG_OP1];
+    uint32_t op2 = vm->registers[REG_OP2];
+    
+    uint8_t op_code = vm->registers[REG_OPC];
+    
+    if (op_code == OPC_MOV) {
+        // Verificar si es MOV EBX, [BP+12]
+        if ((op1 & 0x00FFFFFF) == 0x000C0B && (op1 >> 24) == OP_TYPE_MEMORY) {
+            printf("DEBUG: MOV EBX, [BP+12] - BP=0x%08X, [BP+12]=", vm->registers[REG_BP]);
+            uint32_t value = get_operand_value(vm, op2);
+            printf("0x%08X\n", value);
+        }
+        
+        // Verificar si es MOV EDX, [EBX] 
+        if ((op1 & 0x00FFFFFF) == 0x00000D && (op1 >> 24) == OP_TYPE_MEMORY) {
+            printf("DEBUG: MOV EDX, [EBX] - EBX=0x%08X, [EBX]=", vm->registers[REG_EBX]);
+            uint32_t value = get_operand_value(vm, op2);
+            printf("0x%08X\n", value);
+        }
+    }
+    
     int32_t value = get_operand_value(vm, vm->registers[REG_OP2]);
     set_operand_value(vm, vm->registers[REG_OP1], value);
 }
