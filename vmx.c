@@ -1341,7 +1341,6 @@ void instr_DIV(VM *vm)
 
 void instr_CMP(VM *vm)
 {
-    printf("CMP\n");
     int32_t val1 = get_operand_value(vm, vm->registers[REG_OP1]);
     int32_t val2 = get_operand_value(vm, vm->registers[REG_OP2]);
 

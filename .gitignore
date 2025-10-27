@@ -4,6 +4,9 @@
 # Archivos de máquina virtual
 *.vmx
 
+# Archivos de imagen de máquina virtual
+*.vmi
+
 # Archivos de compilación y depuración (Visual Studio / MSVC)
 *.pdb
 *.ilk
