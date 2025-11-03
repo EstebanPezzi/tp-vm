@@ -426,7 +426,6 @@ void vm_execute(VM *vm)
         uint32_t phys = translate_logical(vm, ip, 1);
         if (phys == -1)
         {
-            printf("Fallo de segmento");
             vm->running = false;
             break;
         }
@@ -498,6 +497,10 @@ void vm_execute(VM *vm)
         else
         {
             printf("Instruccion invalida");
+            vm->running = false;
+        }
+        if (vm->registers[REG_IP] == 0xFFFFFFFF)
+        {
             vm->running = false;
         }
     }
@@ -1072,8 +1075,8 @@ uint32_t translate_logical(VM *vm, uint32_t logical_addr, uint16_t num_bytes)
     uint16_t offset = logical_addr & 0xFFFF;
     if (seg >= SEGMENT_TABLE_SIZE)
     {
+        printf("Fallo de segmento\n");
         vm->running = false;
-        printf("Fallo de segmento 1\n");
         return -1;
     }
 
@@ -1083,7 +1086,7 @@ uint32_t translate_logical(VM *vm, uint32_t logical_addr, uint16_t num_bytes)
 
     if (offset + num_bytes > seg_size)
     {
-        printf("Fallo de segmento 2\n");
+        printf("Fallo de segmento\n");
         vm->running = false;
         return -1;
     }
